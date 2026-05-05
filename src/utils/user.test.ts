@@ -39,16 +39,6 @@ function installCommonMocks(options?: {
     getCwd: () => 'C:\\repo',
   }))
 
-  mock.module('./env.js', () => ({
-    env: { platform: 'windows' },
-    getHostPlatformForAnalytics: () => 'windows',
-  }))
-
-  mock.module('./envUtils.js', () => ({
-    isEnvTruthy: (value: string | undefined) =>
-      !!value && value !== '0' && value.toLowerCase() !== 'false',
-  }))
-
   mock.module('execa', () => ({
     execa: async () => ({
       exitCode: options?.gitEmail ? 0 : 1,
