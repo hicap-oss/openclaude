@@ -44,6 +44,12 @@ function installCommonMocks(options?: {
       exitCode: options?.gitEmail ? 0 : 1,
       stdout: options?.gitEmail ?? '',
     }),
+    execaSync: () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: '',
+      failed: true,
+    }),
   }))
 }
 
