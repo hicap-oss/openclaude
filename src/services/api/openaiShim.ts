@@ -156,6 +156,17 @@ function hasGeminiApiHost(baseUrl: string | undefined): boolean {
   }
 }
 
+function hasCerebrasApiHost(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false
+
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host === 'api.cerebras.ai' || host.endsWith('.cerebras.ai')
+  } catch {
+    return false
+  }
+}
+
 function normalizeDeepSeekReasoningEffort(
   effort: 'low' | 'medium' | 'high' | 'xhigh',
 ): 'high' | 'max' {
@@ -1565,6 +1576,13 @@ class OpenAIShimMessages {
       stream: params.stream ?? false,
       store: false,
     }
+    // Emit reasoning_effort for chat_completions when the resolved provider
+     // request carries a reasoning effort (set via /effort, model alias default,
+     // or `?reasoning=<level>` query on the model string). OpenAI, Codex, and
+     // most OpenAI-compatible endpoints read it from this top-level field.
+    if (request.reasoning) {
+      body.reasoning_effort = request.reasoning.effort
+    }
     // Convert max_tokens to max_completion_tokens for OpenAI API compatibility.
     // Azure OpenAI requires max_completion_tokens and does not accept max_tokens.
     // Ensure max_tokens is a valid positive number before using it.
@@ -1594,7 +1612,8 @@ class OpenAIShimMessages {
     const shouldStripResponsesStore =
       (shimConfig.removeBodyFields ?? []).includes('store') ||
       isGeminiMode() ||
-      hasGeminiApiHost(request.baseUrl)
+      hasGeminiApiHost(request.baseUrl) ||
+      hasCerebrasApiHost(request.baseUrl)
 
     if (
       shimConfig.maxTokensField === 'max_tokens' &&
