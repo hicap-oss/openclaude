@@ -8,8 +8,6 @@ const originalEnv = {
   USER_TYPE: process.env.USER_TYPE,
   CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
-  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
-  OPENAI_API_BASE: process.env.OPENAI_API_BASE,
 }
 
 afterEach(() => {
@@ -82,7 +80,7 @@ test('uses explicit first-party override for provider-routed api traffic', () =>
   )
 })
 
-test('uses claude-cli token for Kimi Code provider traffic', () => {
+test('uses claude-cli token for Kimi Code provider profile traffic', () => {
   ;(globalThis as Record<string, unknown>).MACRO = {
     VERSION: compatibilityVersion,
     DISPLAY_VERSION: publicBuildVersion,
@@ -90,32 +88,15 @@ test('uses claude-cli token for Kimi Code provider traffic', () => {
   process.env.USER_TYPE = 'test-user'
   process.env.CLAUDE_CODE_ENTRYPOINT = 'cli'
   process.env.CLAUDE_CODE_USE_OPENAI = '1'
-  process.env.OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1'
-
-  expect(getProviderApiUserAgent()).toContain(
-    `claude-cli/${compatibilityVersion}`,
-  )
-  expect(getProviderApiUserAgent()).not.toContain('openclaude-cli/')
-})
-
-test('uses claude-cli token for Kimi Code provider override traffic', () => {
-  ;(globalThis as Record<string, unknown>).MACRO = {
-    VERSION: compatibilityVersion,
-    DISPLAY_VERSION: publicBuildVersion,
-  }
-  process.env.USER_TYPE = 'test-user'
-  process.env.CLAUDE_CODE_ENTRYPOINT = 'cli'
 
   expect(
     getProviderApiUserAgent({
-      isFirstParty: false,
-      baseUrl: 'https://api.kimi.com/coding/v1',
+      providerRouteId: 'kimi-code',
     }),
   ).toContain(`claude-cli/${compatibilityVersion}`)
   expect(
     getProviderApiUserAgent({
-      isFirstParty: false,
-      baseUrl: 'https://api.kimi.com/coding/v1',
+      providerRouteId: 'kimi-code',
     }),
   ).not.toContain('openclaude-cli/')
 })
