@@ -196,6 +196,7 @@ export async function getAnthropicClient({
     'x-app': 'cli',
     'User-Agent': getProviderApiUserAgent({
       isFirstParty: shouldUseFirstPartyAuth,
+      baseUrl: providerOverride?.baseURL,
     }),
     'X-Claude-Code-Session-Id': getSessionId(),
     ...customHeaders,

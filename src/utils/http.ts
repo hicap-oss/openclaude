@@ -10,6 +10,10 @@ import {
   handleOAuth401Error,
   isClaudeAISubscriber,
 } from './auth.js'
+import {
+  resolveActiveRouteIdFromEnv,
+  resolveRouteIdFromBaseUrl,
+} from '../integrations/routeMetadata.js'
 import { getAPIProvider } from './model/providers.js'
 import { getClaudeCodeUserAgent, getPublicBuildVersion } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
@@ -39,7 +43,7 @@ export function getUserAgent(): string {
 // Provider-routed API requests can use OpenClaude branding as long as
 // Anthropic first-party traffic keeps the compatibility token above.
 export function getProviderApiUserAgent(
-  options?: { isFirstParty?: boolean },
+  options?: { isFirstParty?: boolean; baseUrl?: string },
 ): string {
   const agentSdkVersion = process.env.CLAUDE_AGENT_SDK_VERSION
     ? `, agent-sdk/${process.env.CLAUDE_AGENT_SDK_VERSION}`
@@ -50,8 +54,17 @@ export function getProviderApiUserAgent(
   const workload = getWorkload()
   const workloadSuffix = workload ? `, workload/${workload}` : ''
   const isFirstParty = options?.isFirstParty ?? getAPIProvider() === 'firstParty'
-  const productName = isFirstParty ? 'claude-cli' : 'openclaude-cli'
-  const version = isFirstParty ? MACRO.VERSION : getPublicBuildVersion()
+  const routeId =
+    resolveRouteIdFromBaseUrl(options?.baseUrl) ?? resolveActiveRouteIdFromEnv()
+  // Kimi Code currently expects the upstream-compatible client token.
+  const requiresCompatibilityIdentity =
+    isFirstParty || routeId === 'kimi-code'
+  const productName = requiresCompatibilityIdentity
+    ? 'claude-cli'
+    : 'openclaude-cli'
+  const version = requiresCompatibilityIdentity
+    ? MACRO.VERSION
+    : getPublicBuildVersion()
   return `${productName}/${version} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
 }
 

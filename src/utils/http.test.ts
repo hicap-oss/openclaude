@@ -8,24 +8,18 @@ const originalEnv = {
   USER_TYPE: process.env.USER_TYPE,
   CLAUDE_CODE_ENTRYPOINT: process.env.CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+  OPENAI_API_BASE: process.env.OPENAI_API_BASE,
 }
 
 afterEach(() => {
   ;(globalThis as Record<string, unknown>).MACRO = originalMacro
-  if (originalEnv.USER_TYPE === undefined) {
-    delete process.env.USER_TYPE
-  } else {
-    process.env.USER_TYPE = originalEnv.USER_TYPE
-  }
-  if (originalEnv.CLAUDE_CODE_ENTRYPOINT === undefined) {
-    delete process.env.CLAUDE_CODE_ENTRYPOINT
-  } else {
-    process.env.CLAUDE_CODE_ENTRYPOINT = originalEnv.CLAUDE_CODE_ENTRYPOINT
-  }
-  if (originalEnv.CLAUDE_CODE_USE_OPENAI === undefined) {
-    delete process.env.CLAUDE_CODE_USE_OPENAI
-  } else {
-    process.env.CLAUDE_CODE_USE_OPENAI = originalEnv.CLAUDE_CODE_USE_OPENAI
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
   }
 })
 
@@ -86,4 +80,42 @@ test('uses explicit first-party override for provider-routed api traffic', () =>
   expect(getProviderApiUserAgent({ isFirstParty: true })).not.toContain(
     `claude-cli/${publicBuildVersion}`,
   )
+})
+
+test('uses claude-cli token for Kimi Code provider traffic', () => {
+  ;(globalThis as Record<string, unknown>).MACRO = {
+    VERSION: compatibilityVersion,
+    DISPLAY_VERSION: publicBuildVersion,
+  }
+  process.env.USER_TYPE = 'test-user'
+  process.env.CLAUDE_CODE_ENTRYPOINT = 'cli'
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1'
+
+  expect(getProviderApiUserAgent()).toContain(
+    `claude-cli/${compatibilityVersion}`,
+  )
+  expect(getProviderApiUserAgent()).not.toContain('openclaude-cli/')
+})
+
+test('uses claude-cli token for Kimi Code provider override traffic', () => {
+  ;(globalThis as Record<string, unknown>).MACRO = {
+    VERSION: compatibilityVersion,
+    DISPLAY_VERSION: publicBuildVersion,
+  }
+  process.env.USER_TYPE = 'test-user'
+  process.env.CLAUDE_CODE_ENTRYPOINT = 'cli'
+
+  expect(
+    getProviderApiUserAgent({
+      isFirstParty: false,
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    }),
+  ).toContain(`claude-cli/${compatibilityVersion}`)
+  expect(
+    getProviderApiUserAgent({
+      isFirstParty: false,
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    }),
+  ).not.toContain('openclaude-cli/')
 })
