@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -16,6 +16,8 @@ import {
   buildOpenAIProfileEnv,
   clearPersistedCodexOAuthProfile,
   createProfileFile,
+  deleteProfileFile,
+  getDefaultProfileFilePath,
   isPersistedCodexOAuthProfile,
   maskSecretForDisplay,
   loadProfileFile,
@@ -207,7 +209,7 @@ test('openai launch ignores codex shell transport hints', async () => {
   })
 
   assert.equal(env.OPENAI_BASE_URL, 'https://api.openai.com/v1')
-  assert.equal(env.OPENAI_MODEL, 'gpt-4o')
+  assert.equal(env.OPENAI_MODEL, 'gpt-5.5')
   assert.equal(env.OPENAI_API_KEY, 'sk-live')
 })
 
@@ -226,7 +228,7 @@ test('openai launch ignores codex persisted transport hints', async () => {
   })
 
   assert.equal(env.OPENAI_BASE_URL, 'https://api.openai.com/v1')
-  assert.equal(env.OPENAI_MODEL, 'gpt-4o')
+  assert.equal(env.OPENAI_MODEL, 'gpt-5.5')
   assert.equal(env.OPENAI_API_KEY, 'sk-live')
 })
 
@@ -585,6 +587,150 @@ test('saveProfileFile writes a profile that loadProfileFile can read back', () =
   }
 })
 
+test('saveProfileFile defaults to user config instead of the working directory', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-workspace-profile-'))
+  const configRoot = mkdtempSync(join(tmpdir(), 'openclaude-config-profile-'))
+  const configDir = join(configRoot, 'config')
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const previousCwd = process.cwd()
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.chdir(cwd)
+
+    const persisted = createProfileFile('openai', {
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_MODEL: 'gpt-4o',
+    })
+
+    const filePath = saveProfileFile(persisted)
+
+    assert.equal(filePath, join(configDir, PROFILE_FILE_NAME))
+    assert.equal(getDefaultProfileFilePath(), join(configDir, PROFILE_FILE_NAME))
+    assert.equal(existsSync(join(cwd, PROFILE_FILE_NAME)), false)
+    assert.equal(statSync(configDir).mode & 0o777, 0o700)
+    assert.deepEqual(loadProfileFile(), persisted)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    }
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(configRoot, { recursive: true, force: true })
+  }
+})
+
+test('loadProfileFile keeps project-local files as a legacy fallback', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-legacy-profile-'))
+  const configDir = mkdtempSync(join(tmpdir(), 'openclaude-empty-config-profile-'))
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const previousCwd = process.cwd()
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.chdir(cwd)
+
+    const legacyProfile = createProfileFile('gemini', {
+      GEMINI_API_KEY: 'gem-test',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    })
+    writeFileSync(
+      join(cwd, PROFILE_FILE_NAME),
+      JSON.stringify(legacyProfile, null, 2),
+      'utf8',
+    )
+
+    assert.deepEqual(loadProfileFile(), legacyProfile)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    }
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(configDir, { recursive: true, force: true })
+  }
+})
+
+test('loadProfileFile does not fall back when user config profile is invalid', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-invalid-profile-'))
+  const configDir = mkdtempSync(join(tmpdir(), 'openclaude-invalid-config-profile-'))
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const previousCwd = process.cwd()
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.chdir(cwd)
+
+    const legacyProfile = createProfileFile('gemini', {
+      GEMINI_API_KEY: 'gem-test',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+    })
+    writeFileSync(join(configDir, PROFILE_FILE_NAME), '{', 'utf8')
+    writeFileSync(
+      join(cwd, PROFILE_FILE_NAME),
+      JSON.stringify(legacyProfile, null, 2),
+      'utf8',
+    )
+
+    assert.equal(loadProfileFile(), null)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    }
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(configDir, { recursive: true, force: true })
+  }
+})
+
+test('deleteProfileFile clears the default profile and legacy workspace fallback', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-delete-profile-'))
+  const configDir = mkdtempSync(join(tmpdir(), 'openclaude-delete-config-profile-'))
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const previousCwd = process.cwd()
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.chdir(cwd)
+
+    const configProfile = createProfileFile('openai', {
+      OPENAI_API_KEY: 'sk-test',
+    })
+    const legacyProfile = createProfileFile('ollama', {
+      OPENAI_BASE_URL: 'http://localhost:11434/v1',
+      OPENAI_MODEL: 'llama3.1:8b',
+    })
+
+    saveProfileFile(configProfile)
+    writeFileSync(
+      join(cwd, PROFILE_FILE_NAME),
+      JSON.stringify(legacyProfile, null, 2),
+      'utf8',
+    )
+
+    deleteProfileFile()
+
+    assert.equal(existsSync(join(configDir, PROFILE_FILE_NAME)), false)
+    assert.equal(existsSync(join(cwd, PROFILE_FILE_NAME)), false)
+    assert.equal(loadProfileFile(), null)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    }
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(configDir, { recursive: true, force: true })
+  }
+})
+
 test('buildCodexProfileEnv tags OAuth-saved profiles so logout can remove them safely', () => {
   const env = buildCodexProfileEnv({
     model: 'codexplan',
@@ -632,7 +778,6 @@ test('clearPersistedCodexOAuthProfile removes only persisted Codex OAuth profile
       CODEX_CREDENTIAL_SOURCE: 'oauth',
     })
     saveProfileFile(oauthProfile, { cwd })
-
     assert.equal(isPersistedCodexOAuthProfile(loadProfileFile({ cwd })), true)
     assert.equal(
       clearPersistedCodexOAuthProfile({ cwd }),
@@ -653,6 +798,49 @@ test('clearPersistedCodexOAuthProfile removes only persisted Codex OAuth profile
     assert.deepEqual(loadProfileFile({ cwd }), existingCredentialProfile)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('clearPersistedCodexOAuthProfile clears both default and legacy OAuth profiles', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'openclaude-clear-oauth-profile-'))
+  const configDir = mkdtempSync(join(tmpdir(), 'openclaude-clear-oauth-config-'))
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const previousCwd = process.cwd()
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.chdir(cwd)
+
+    const oauthProfile = createProfileFile('codex', {
+      OPENAI_MODEL: 'codexplan',
+      OPENAI_BASE_URL: DEFAULT_CODEX_BASE_URL,
+      CHATGPT_ACCOUNT_ID: 'acct_oauth',
+      CODEX_CREDENTIAL_SOURCE: 'oauth',
+    })
+
+    saveProfileFile(oauthProfile)
+    writeFileSync(
+      join(cwd, PROFILE_FILE_NAME),
+      JSON.stringify(oauthProfile, null, 2),
+      'utf8',
+    )
+
+    assert.equal(
+      clearPersistedCodexOAuthProfile(),
+      join(configDir, PROFILE_FILE_NAME),
+    )
+    assert.equal(existsSync(join(configDir, PROFILE_FILE_NAME)), false)
+    assert.equal(existsSync(join(cwd, PROFILE_FILE_NAME)), false)
+    assert.equal(loadProfileFile(), null)
+  } finally {
+    process.chdir(previousCwd)
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    }
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(configDir, { recursive: true, force: true })
   }
 })
 
@@ -870,6 +1058,36 @@ test('applySavedProfileToCurrentSession can switch away from GitHub provider env
   assert.equal(Object.hasOwn(processEnv, 'OPENAI_API_KEY'), false)
 })
 
+test('applySavedProfileToCurrentSession replaces empty active OpenAI key for Codex OAuth', async () => {
+  const { applySavedProfileToCurrentSession } = await importFreshProviderProfileModule()
+  const processEnv: NodeJS.ProcessEnv = {
+    CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED: '1',
+    CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID: 'provider_codex_oauth',
+    CLAUDE_CODE_USE_OPENAI: '1',
+    OPENAI_BASE_URL: DEFAULT_CODEX_BASE_URL,
+    OPENAI_MODEL: 'codexplan',
+    OPENAI_API_KEY: '',
+  }
+
+  const error = await applySavedProfileToCurrentSession({
+    profileFile: profile('codex', {
+      OPENAI_BASE_URL: DEFAULT_CODEX_BASE_URL,
+      OPENAI_MODEL: 'codexplan',
+      CHATGPT_ACCOUNT_ID: 'acct_oauth',
+      CODEX_CREDENTIAL_SOURCE: 'oauth',
+    }),
+    processEnv,
+  })
+
+  assert.equal(error, null)
+  assert.equal(processEnv.CLAUDE_CODE_USE_OPENAI, '1')
+  assert.equal(processEnv.OPENAI_BASE_URL, DEFAULT_CODEX_BASE_URL)
+  assert.equal(processEnv.OPENAI_MODEL, 'codexplan')
+  assert.equal(Object.hasOwn(processEnv, 'OPENAI_API_KEY'), false)
+  assert.equal(processEnv.CHATGPT_ACCOUNT_ID, 'acct_oauth')
+  assert.equal(Object.hasOwn(processEnv, 'CODEX_API_KEY'), false)
+})
+
 test('buildStartupEnvFromProfile preserves plural-profile env when the legacy file is stale', async () => {
   // Regression: a user saves a provider via /provider (plural system).
   // addProviderProfile does NOT sync the legacy .openclaude-profile.json,
@@ -1002,7 +1220,7 @@ test('openai profiles ignore codex shell transport hints', () => {
 
   assert.deepEqual(env, {
     OPENAI_BASE_URL: 'https://api.openai.com/v1',
-    OPENAI_MODEL: 'gpt-4o',
+    OPENAI_MODEL: 'gpt-5.5',
     OPENAI_API_KEY: 'sk-live',
   })
 })
@@ -1051,7 +1269,7 @@ test('openai profiles ignore poisoned shell model and base url values', () => {
 
   assert.deepEqual(env, {
     OPENAI_BASE_URL: 'https://api.openai.com/v1',
-    OPENAI_MODEL: 'gpt-4o',
+    OPENAI_MODEL: 'gpt-5.5',
     OPENAI_API_KEY: 'sk-live',
   })
 })
@@ -1084,7 +1302,7 @@ test('startup env ignores poisoned persisted openai model and base url', async (
 
   assert.equal(env.CLAUDE_CODE_USE_OPENAI, '1')
   assert.equal(env.OPENAI_API_KEY, 'sk-live')
-  assert.equal(env.OPENAI_MODEL, 'gpt-4o')
+  assert.equal(env.OPENAI_MODEL, 'gpt-5.5')
   assert.equal(env.OPENAI_BASE_URL, 'https://api.openai.com/v1')
 })
 
