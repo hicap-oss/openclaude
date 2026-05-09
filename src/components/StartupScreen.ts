@@ -17,8 +17,10 @@ import { DEFAULT_GEMINI_MODEL } from '../utils/providerProfile.js'
 import { getGlobalConfig } from '../utils/config.js'
 import {
   getDisplayedEffortLevel,
+  getEffortEnvOverride,
   getInitialEffortSetting,
   modelSupportsEffort,
+  openAIEffortToStandard,
 } from '../utils/effort.js'
 import { ANSI_DIM, ANSI_RESET, ansiRgb } from '../utils/terminalAnsi.js'
 import {
@@ -156,7 +158,14 @@ export function detectProvider(modelOverride?: string): { name: string; model: s
     // provider alias may carry a default reasoning effort, but saved /effort
     // and CLAUDE_CODE_EFFORT_LEVEL must take precedence in the startup banner.
     if (modelSupportsEffort(displayModel)) {
-      displayModel = `${displayModel} (${getDisplayedEffortLevel(displayModel, getInitialEffortSetting())})`
+      const savedEffort = getInitialEffortSetting()
+      const aliasDefaultEffort =
+        getEffortEnvOverride() === undefined &&
+        savedEffort === undefined &&
+        resolvedRequest.reasoning?.effort
+          ? openAIEffortToStandard(resolvedRequest.reasoning.effort)
+          : undefined
+      displayModel = `${displayModel} (${getDisplayedEffortLevel(displayModel, savedEffort ?? aliasDefaultEffort)})`
     }
 
     return { name, model: displayModel, baseUrl, isLocal }

@@ -269,6 +269,14 @@ describe('detectProvider — explicit dedicated-provider env flags', () => {
 })
 
 describe('detectProvider — startup effort display', () => {
+  test('OpenAI startup banner uses provider alias default when no saved or env effort is set', () => {
+    setupOpenAIMode('https://api.openai.com/v1', 'gpt-5.4')
+
+    const result = detectProvider()
+
+    expect(result.model).toBe('gpt-5.4 (high)')
+  })
+
   test('OpenAI startup banner uses saved /effort over provider alias default', () => {
     setupOpenAIMode('https://api.openai.com/v1', 'gpt-5.4')
     setSessionSettingsCache({ settings: { effortLevel: 'medium' }, errors: [] })
