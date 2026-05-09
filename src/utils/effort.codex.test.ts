@@ -165,3 +165,29 @@ test('e2e: max on non-Opus Anthropic model still clamps to high', async () => {
 
   expect(resolveAppliedEffort('claude-sonnet-4-6', 'max')).toBe('high')
 })
+
+
+test('getEffortSuffix shows the effective displayed effort for supported models', async () => {
+  const { getDisplayedEffortLevel, getEffortSuffix } =
+    await importFreshEffortModule({
+      provider: 'openai',
+      supportsCodexReasoningEffort: true,
+    })
+
+  expect(getEffortSuffix('gpt-5.4', 'medium')).toBe(' with medium effort')
+
+  const displayedDefault = getDisplayedEffortLevel('gpt-5.4', undefined)
+  expect(getEffortSuffix('gpt-5.4', undefined)).toBe(
+    ` with ${displayedDefault} effort`,
+  )
+})
+
+test('getEffortSuffix stays hidden for models without effort controls', async () => {
+  const { getEffortSuffix } = await importFreshEffortModule({
+    provider: 'codex',
+    supportsCodexReasoningEffort: false,
+  })
+
+  expect(getEffortSuffix('gpt-5.3-codex-spark', 'medium')).toBe('')
+  expect(getEffortSuffix('gpt-5.3-codex-spark', undefined)).toBe('')
+})
