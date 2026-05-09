@@ -4,7 +4,7 @@ import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, isOpenAIEffortLevel, modelUsesOpenAIEffort, openAIEffortToStandard, toPersistableEffort } from '../../utils/effort.js';
+import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, isOpenAIEffortLevel, openAIEffortToStandard, toPersistableEffort } from '../../utils/effort.js';
 import { EffortPicker } from '../../components/EffortPicker.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
 const COMMON_HELP_ARGS = ['help', '-h', '--help'];
@@ -191,8 +191,6 @@ export async function call(onDone: LocalJSXCommandOnDone, _context: unknown, arg
 
 function EffortPickerWrapper({ onDone }: { onDone: LocalJSXCommandOnDone }) {
   const setAppState = useSetAppState();
-  const model = useMainLoopModel();
-  const usesOpenAIEffort = modelUsesOpenAIEffort(model);
 
   function handleSelect(effort: EffortValue | undefined) {
     const result = effort === undefined ? unsetEffortLevel() : setEffortValue(effort);
