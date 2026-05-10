@@ -3,6 +3,7 @@ import { join } from 'path'
 
 import { optionForPermissionSaveDestination } from '../components/permissions/rules/AddPermissionRules.tsx'
 import { isClaudeSettingsPath } from './permissions/filesystem.ts'
+import { getDefaultPermissionModeOptions } from './permissions/defaultPermissionModeOptions.ts'
 import { getValidationTip } from './settings/validationTips.ts'
 
 describe('OpenClaude settings path surfaces', () => {
@@ -53,13 +54,23 @@ describe('OpenClaude validation tips', () => {
         'bypassPermissions',
         'default',
         'dontAsk',
+        'fullAccess',
         'plan',
       ],
     })
 
     expect(tip).toEqual({
       suggestion:
-        'Valid modes: "acceptEdits" (ask before file changes), "plan" (analysis only), "bypassPermissions" (auto-accept all), or "default" (standard behavior)',
+        'Valid modes: "acceptEdits" (ask before file changes), "plan" (analysis only), "bypassPermissions" (auto-accept prompts), "fullAccess" (skip even hard safety-check prompts), or "default" (standard behavior)',
     })
+  })
+})
+
+describe('OpenClaude permission mode surfaces', () => {
+  test('default permission mode picker excludes dangerous persisted modes', () => {
+    const options = getDefaultPermissionModeOptions(true)
+
+    expect(options).not.toContain('bypassPermissions')
+    expect(options).not.toContain('fullAccess')
   })
 })

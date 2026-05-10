@@ -48,6 +48,10 @@ import type { ImageDimensions } from '../../../utils/imageResizer.js';
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../../utils/imageStore.js';
 type ResponseValue = 'yes-bypass-permissions' | 'yes-accept-edits' | 'yes-accept-edits-keep-context' | 'yes-default-keep-context' | 'yes-resume-auto-mode' | 'yes-auto-clear-context' | 'ultraplan' | 'no';
+type DangerousPlanExitMode = Extract<
+  PermissionMode,
+  'bypassPermissions' | 'fullAccess'
+>;
 
 /**
  * Build permission updates for plan approval, including prompt-based rules if provided.
@@ -73,6 +77,24 @@ export function buildPermissionUpdates(mode: PermissionMode, allowedPrompts?: Al
     });
   }
   return updates;
+}
+
+/** @internal Exported for testing. */
+export function getDangerousPlanExitMode({
+  isBypassPermissionsModeAvailable,
+  prePlanMode
+}: {
+  isBypassPermissionsModeAvailable: boolean | undefined;
+  prePlanMode?: PermissionMode;
+}): DangerousPlanExitMode | null {
+  if (!isBypassPermissionsModeAvailable) {
+    return null;
+  }
+  return prePlanMode === 'fullAccess' ? 'fullAccess' : 'bypassPermissions';
+}
+
+function getDangerousPlanExitLabel(mode: DangerousPlanExitMode): string {
+  return mode === 'fullAccess' ? 'full access' : 'bypass permissions';
 }
 
 /**
@@ -145,19 +167,24 @@ export function ExitPlanModePermissionRequest({
   const usage = toolUseConfirm.assistantMessage.message.usage;
   const {
     mode,
+    prePlanMode,
     isAutoModeAvailable,
     isBypassPermissionsModeAvailable
   } = toolPermissionContext;
+  const dangerousPlanExitMode = getDangerousPlanExitMode({
+    isBypassPermissionsModeAvailable,
+    prePlanMode
+  });
   const planAuthorName = modelDisplayString(toolUseConfirm.assistantMessage.message.model);
   const options = useMemo(() => buildPlanApprovalOptions({
     showClearContext,
     showUltraplan,
     usedPercent: showClearContext ? getContextUsedPercent(usage, mode) : null,
     isAutoModeAvailable,
-    isBypassPermissionsModeAvailable,
+    dangerousPlanExitMode,
     planAuthorName,
     onFeedbackChange: setPlanFeedback
-  }), [showClearContext, showUltraplan, usage, mode, isAutoModeAvailable, isBypassPermissionsModeAvailable, planAuthorName]);
+  }), [showClearContext, showUltraplan, usage, mode, isAutoModeAvailable, dangerousPlanExitMode, planAuthorName]);
   function onImagePaste(base64Image: string, mediaType?: string, filename?: string, dimensions?: ImageDimensions, _sourcePath?: string) {
     const pasteId = nextPasteIdRef.current++;
     const newContent: PastedContent = {
@@ -342,8 +369,8 @@ export function ExitPlanModePermissionRequest({
     if (value !== 'no' && !isKeepContextOption) {
       // Determine the permission mode based on the selected option
       let mode: PermissionMode = 'default';
-      if (value === 'yes-bypass-permissions') {
-        mode = 'bypassPermissions';
+      if (value === 'yes-bypass-permissions' && dangerousPlanExitMode) {
+        mode = dangerousPlanExitMode;
       } else if (value === 'yes-accept-edits') {
         mode = 'acceptEdits';
       } else if (feature('TRANSCRIPT_CLASSIFIER') && value === 'yes-auto-clear-context' && isAutoModeGateEnabled()) {
@@ -430,7 +457,7 @@ export function ExitPlanModePermissionRequest({
     // Without this fallback the function would return without resolving the
     // dialog, leaving the query loop blocked and safety state corrupted.
     const keepContextModes: Record<string, PermissionMode> = {
-      'yes-accept-edits-keep-context': toolPermissionContext.isBypassPermissionsModeAvailable ? 'bypassPermissions' : 'acceptEdits',
+      'yes-accept-edits-keep-context': dangerousPlanExitMode ?? 'acceptEdits',
       'yes-default-keep-context': 'default',
       ...(feature('TRANSCRIPT_CLASSIFIER') ? {
         'yes-resume-auto-mode': 'default' as const
@@ -455,7 +482,9 @@ export function ExitPlanModePermissionRequest({
 
     // Handle standard approval options
     const standardModes: Record<string, PermissionMode> = {
-      'yes-bypass-permissions': 'bypassPermissions',
+      ...(dangerousPlanExitMode ? {
+        'yes-bypass-permissions': dangerousPlanExitMode
+      } : {}),
       'yes-accept-edits': 'acceptEdits'
     };
     const standardMode = standardModes[value];
@@ -678,7 +707,7 @@ export function buildPlanApprovalOptions({
   showUltraplan,
   usedPercent,
   isAutoModeAvailable,
-  isBypassPermissionsModeAvailable,
+  dangerousPlanExitMode,
   planAuthorName,
   onFeedbackChange
 }: {
@@ -686,7 +715,7 @@ export function buildPlanApprovalOptions({
   showUltraplan: boolean;
   usedPercent: number | null;
   isAutoModeAvailable: boolean | undefined;
-  isBypassPermissionsModeAvailable: boolean | undefined;
+  dangerousPlanExitMode: DangerousPlanExitMode | null;
   planAuthorName: string;
   onFeedbackChange: (v: string) => void;
 }): OptionWithDescription<ResponseValue>[] {
@@ -698,9 +727,9 @@ export function buildPlanApprovalOptions({
         label: `Yes, clear context${usedLabel} and use auto mode`,
         value: 'yes-auto-clear-context'
       });
-    } else if (isBypassPermissionsModeAvailable) {
+    } else if (dangerousPlanExitMode) {
       options.push({
-        label: `Yes, clear context${usedLabel} and bypass permissions`,
+        label: `Yes, clear context${usedLabel} and ${getDangerousPlanExitLabel(dangerousPlanExitMode)}`,
         value: 'yes-bypass-permissions'
       });
     } else {
@@ -717,9 +746,9 @@ export function buildPlanApprovalOptions({
       label: 'Yes, and use auto mode',
       value: 'yes-resume-auto-mode'
     });
-  } else if (isBypassPermissionsModeAvailable) {
+  } else if (dangerousPlanExitMode) {
     options.push({
-      label: 'Yes, and bypass permissions',
+      label: `Yes, and ${getDangerousPlanExitLabel(dangerousPlanExitMode)}`,
       value: 'yes-accept-edits-keep-context'
     });
   } else {
