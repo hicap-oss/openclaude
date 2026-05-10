@@ -13,6 +13,7 @@ type PermissionModeChangeRequest = {
   onApply: () => void
   onBlocked?: (error: string) => void
   allowDangerousModeConfirmation?: boolean
+  allowSessionBypassPermissionsModeEnable?: boolean
   skipDangerousModePrompt?: boolean
   requireLocalConfirmation?: boolean
 }
@@ -31,6 +32,7 @@ export function usePermissionModeChangeRequest() {
       onApply,
       onBlocked,
       allowDangerousModeConfirmation = true,
+      allowSessionBypassPermissionsModeEnable = false,
       skipDangerousModePrompt = false,
       requireLocalConfirmation,
     }: PermissionModeChangeRequest): Promise<boolean> => {
@@ -40,6 +42,7 @@ export function usePermissionModeChangeRequest() {
         onApply,
         onBlocked,
         allowDangerousModeConfirmation,
+        allowSessionBypassPermissionsModeEnable,
         skipDangerousModePrompt,
         requireLocalConfirmation,
         onConfirmDangerousMode: requestDangerousModeConfirmation,

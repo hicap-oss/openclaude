@@ -815,6 +815,7 @@ export function PermissionRuleList(t0) {
     await requestPermissionModeChange({
       mode: mode_0,
       toolPermissionContext,
+      allowSessionBypassPermissionsModeEnable: true,
       skipDangerousModePrompt: options_0?.skipPrompt,
       onApply: () => {
         setAppState(prev_0 => {

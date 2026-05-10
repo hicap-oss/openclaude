@@ -41,13 +41,7 @@ export function getManageablePermissionModes(
     modes.push('auto')
   }
 
-  if (
-    context.isBypassPermissionsModeAvailable ||
-    context.mode === 'bypassPermissions' ||
-    context.mode === 'fullAccess'
-  ) {
-    modes.push('bypassPermissions', 'fullAccess')
-  }
+  modes.push('bypassPermissions', 'fullAccess')
 
   return modes
 }

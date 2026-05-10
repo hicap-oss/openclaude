@@ -16,6 +16,7 @@ type RequestPermissionModeChangeDeps = {
     mode: PermissionMode
     toolPermissionContext: PermissionModeChangeContext
     allowDangerousModeConfirmation?: boolean
+    allowSessionBypassPermissionsModeEnable?: boolean
     skipDangerousModePrompt?: boolean
     requireLocalConfirmation?: boolean
   }) => Promise<PermissionModeChangeRequestDecision>
@@ -36,6 +37,7 @@ export type RequestPermissionModeChangeOptions = {
   onApply: () => void | Promise<void>
   onBlocked?: (error: string) => void
   allowDangerousModeConfirmation?: boolean
+  allowSessionBypassPermissionsModeEnable?: boolean
   skipDangerousModePrompt?: boolean
   requireLocalConfirmation?: boolean
   onConfirmDangerousMode?: (
@@ -51,6 +53,7 @@ export async function requestPermissionModeChange({
   onApply,
   onBlocked,
   allowDangerousModeConfirmation = true,
+  allowSessionBypassPermissionsModeEnable = false,
   skipDangerousModePrompt = false,
   requireLocalConfirmation,
   onConfirmDangerousMode,
@@ -60,6 +63,7 @@ export async function requestPermissionModeChange({
     mode,
     toolPermissionContext,
     allowDangerousModeConfirmation,
+    allowSessionBypassPermissionsModeEnable,
     skipDangerousModePrompt,
     requireLocalConfirmation,
   })
@@ -89,6 +93,7 @@ export async function requestPermissionModeChange({
         onApply,
         onBlocked,
         allowDangerousModeConfirmation,
+        allowSessionBypassPermissionsModeEnable,
         skipDangerousModePrompt: true,
         requireLocalConfirmation,
         onConfirmDangerousMode,

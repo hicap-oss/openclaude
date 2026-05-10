@@ -701,9 +701,15 @@ export function applyPermissionModeChange(
   context: ToolPermissionContext,
   mode: PermissionMode,
 ): ToolPermissionContext {
+  const nextContext = transitionPermissionMode(context.mode, mode, context)
+
   return {
-    ...transitionPermissionMode(context.mode, mode, context),
+    ...nextContext,
     mode,
+    isBypassPermissionsModeAvailable:
+      mode === 'bypassPermissions' || mode === 'fullAccess'
+        ? true
+        : nextContext.isBypassPermissionsModeAvailable,
   }
 }
 
@@ -1518,6 +1524,7 @@ export async function getPermissionModeChangeRequestDecision({
   mode,
   toolPermissionContext,
   allowDangerousModeConfirmation = false,
+  allowSessionBypassPermissionsModeEnable = false,
   skipDangerousModePrompt = false,
   requireLocalConfirmation,
 }: {
@@ -1527,6 +1534,7 @@ export async function getPermissionModeChangeRequestDecision({
     'isBypassPermissionsModeAvailable'
   >
   allowDangerousModeConfirmation?: boolean
+  allowSessionBypassPermissionsModeEnable?: boolean
   skipDangerousModePrompt?: boolean
   requireLocalConfirmation?: boolean
 }): Promise<PermissionModeChangeRequestDecision> {
@@ -1536,6 +1544,7 @@ export async function getPermissionModeChangeRequestDecision({
     const dangerousModeError = await getDangerousPermissionModeTransitionError({
       mode,
       toolPermissionContext,
+      allowSessionBypassPermissionsModeEnable,
       requireLocalConfirmation: false,
     })
     if (dangerousModeError) {
@@ -1563,6 +1572,7 @@ export async function getPermissionModeChangeRequestDecision({
         await getDangerousPermissionModeTransitionError({
           mode,
           toolPermissionContext,
+          allowSessionBypassPermissionsModeEnable,
           requireLocalConfirmation: true,
         })
       if (localConfirmationError) {
@@ -1594,6 +1604,7 @@ export async function getPermissionModeChangeRequestDecision({
 export async function getDangerousPermissionModeTransitionError({
   mode,
   toolPermissionContext,
+  allowSessionBypassPermissionsModeEnable = false,
   requireLocalConfirmation = true,
   deps = DEFAULT_DANGEROUS_PERMISSION_MODE_TRANSITION_VALIDATION_DEPS,
 }: {
@@ -1602,6 +1613,7 @@ export async function getDangerousPermissionModeTransitionError({
     ToolPermissionContext,
     'isBypassPermissionsModeAvailable'
   >
+  allowSessionBypassPermissionsModeEnable?: boolean
   requireLocalConfirmation?: boolean
   deps?: DangerousPermissionModeTransitionValidationDeps
 }): Promise<string | undefined> {
@@ -1613,7 +1625,10 @@ export async function getDangerousPermissionModeTransitionError({
     return `Cannot set permission mode to ${mode} because it is disabled by settings or configuration`
   }
 
-  if (!toolPermissionContext.isBypassPermissionsModeAvailable) {
+  if (
+    !toolPermissionContext.isBypassPermissionsModeAvailable &&
+    !allowSessionBypassPermissionsModeEnable
+  ) {
     return `Cannot set permission mode to ${mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`
   }
 

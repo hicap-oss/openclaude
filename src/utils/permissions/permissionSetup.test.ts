@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  applyPermissionModeChange,
   applyPermissionUpdatesToLiveContext,
   getDangerousPermissionModeTransitionError,
   getEffectiveDefaultPermissionModeFromSettingsSources,
 } from './permissionSetup.js'
+import { getEmptyToolPermissionContext } from '../../Tool.js'
 import { requestPermissionModeChange } from './permissionModeChange.js'
 
 describe('getEffectiveDefaultPermissionModeFromSettingsSources', () => {
@@ -121,6 +123,26 @@ describe('getDangerousPermissionModeTransitionError', () => {
 
     expect(error).toBeUndefined()
   })
+
+  test('allows local session unlocks from the permissions UI', async () => {
+    const error = await getDangerousPermissionModeTransitionError({
+      mode: 'fullAccess',
+      toolPermissionContext: {
+        isBypassPermissionsModeAvailable: false,
+      },
+      allowSessionBypassPermissionsModeEnable: true,
+      requireLocalConfirmation: false,
+      deps: {
+        getStartupDangerousPermissionPromptState: () => ({
+          shouldShow: true,
+          mode: 'fullAccess',
+        }),
+        shouldDisableBypassPermissions: async () => false,
+      },
+    })
+
+    expect(error).toBeUndefined()
+  })
 })
 
 describe('applyPermissionUpdatesToLiveContext', () => {
@@ -135,6 +157,21 @@ describe('applyPermissionUpdatesToLiveContext', () => {
 
     expect(updated.mode).toBe('default')
     expect(updated.prePlanMode).toBeUndefined()
+  })
+})
+
+describe('applyPermissionModeChange', () => {
+  test('marks dangerous modes as available once they are enabled in-session', () => {
+    const updated = applyPermissionModeChange(
+      {
+        ...getEmptyToolPermissionContext(),
+        isBypassPermissionsModeAvailable: false,
+      },
+      'fullAccess',
+    )
+
+    expect(updated.mode).toBe('fullAccess')
+    expect(updated.isBypassPermissionsModeAvailable).toBe(true)
   })
 })
 
