@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'bun:test'
+import { z } from 'zod/v4'
 import {
   buildPermissionContext,
   connectSdkMcpServers,
@@ -12,8 +13,36 @@ import type { PermissionResolveDecision } from '../../src/entrypoints/sdk/permis
 import { getEmptyToolPermissionContext } from '../../src/Tool.js'
 import { filterToolsByDenyRules } from '../../src/tools.js'
 
+const sdkAskTool = {
+  name: 'SDKAskTool',
+  inputSchema: z.object({}),
+  async checkPermissions() {
+    return {
+      behavior: 'ask',
+      message: 'confirm?',
+      updatedInput: { normalized: true },
+    }
+  },
+} as any
+
+const sdkGuidanceTool = {
+  name: 'SDKGuidanceTool',
+  inputSchema: z.object({}),
+  requiresUserInteraction() {
+    return true
+  },
+  async checkPermissions() {
+    return {
+      behavior: 'ask',
+      message: 'Choose an option',
+      updatedInput: { normalized: true },
+    }
+  },
+} as any
+
 function toolUseContextForPermissionMode(mode: string) {
   return {
+    abortController: new AbortController(),
     getAppState: () => ({
       toolPermissionContext: {
         ...getEmptyToolPermissionContext(),
@@ -165,6 +194,23 @@ describe('createDefaultCanUseTool', () => {
     expect(result.behavior).toBe('allow')
   })
 
+  test('honors forced ask outside fullAccess', async () => {
+    const ctx = getEmptyToolPermissionContext()
+    const canUseTool = createDefaultCanUseTool(ctx)
+    const forced = { behavior: 'ask' as const, message: 'confirm?' }
+
+    const result = await canUseTool(
+      sdkAskTool,
+      {},
+      toolUseContextForPermissionMode('default'),
+      {} as any,
+      'default-force-ask',
+      forced,
+    )
+
+    expect(result).toBe(forced)
+  })
+
   test('warning not emitted at construction time', () => {
     const ctx = getEmptyToolPermissionContext()
     const logger = { warn: vi.fn() }
@@ -191,7 +237,7 @@ describe('createDefaultCanUseTool', () => {
     expect(logger.warn).not.toHaveBeenCalled()
   })
 
-  test('fullAccess bypasses forced ask decisions', async () => {
+  test('fullAccess still denies by default without SDK permission callbacks', async () => {
     const ctx = getEmptyToolPermissionContext()
     const logger = { warn: vi.fn() }
     const canUseTool = createDefaultCanUseTool(ctx, logger)
@@ -209,12 +255,26 @@ describe('createDefaultCanUseTool', () => {
       },
     )
 
-    expect(result).toMatchObject({
-      behavior: 'allow',
-      updatedInput: { command: 'git status --short' },
-      decisionReason: { type: 'mode', mode: 'fullAccess' },
-    })
-    expect(logger.warn).not.toHaveBeenCalled()
+    expect(result.behavior).toBe('deny')
+    expect(result.message).toContain('no canUseTool or onPermissionRequest callback provided')
+  })
+
+  test('fullAccess remains fail-closed without callbacks', async () => {
+    const ctx = getEmptyToolPermissionContext()
+    const logger = { warn: vi.fn() }
+    const canUseTool = createDefaultCanUseTool(ctx, logger)
+
+    const result = await canUseTool(
+      sdkAskTool,
+      { raw: true },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-default-no-force',
+      undefined,
+    )
+
+    expect(result.behavior).toBe('deny')
+    expect(result.message).toContain('no canUseTool or onPermissionRequest callback provided')
   })
 })
 
@@ -253,9 +313,12 @@ describe('createExternalCanUseTool synchronous host response', () => {
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
   })
 
-  test('fullAccess bypasses forced ask without requesting host permission', async () => {
+  test('fullAccess still routes forced ask through host permission callbacks', async () => {
     const permissionTarget = createPermissionTarget()
-    const onPermissionRequest = vi.fn()
+    const onPermissionRequest = vi.fn((message: any) => {
+      const pending = permissionTarget.pendingPermissionPrompts.get(message.tool_use_id)
+      pending!.resolve({ behavior: 'allow' as const })
+    })
 
     const canUseTool = createExternalCanUseTool(
       undefined,
@@ -280,13 +343,170 @@ describe('createExternalCanUseTool synchronous host response', () => {
       },
     )
 
-    expect(result).toMatchObject({
-      behavior: 'allow',
-      updatedInput: { action: 'run-fast' },
-      decisionReason: { type: 'mode', mode: 'fullAccess' },
+    expect(result.behavior).toBe('allow')
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(onPermissionRequest.mock.calls[0][0].input).toEqual({
+      action: 'run-fast',
     })
+    expect(permissionTarget.pendingPermissionPrompts.size).toBe(0)
+  })
+
+  test('honors forced ask outside fullAccess before SDK callbacks', async () => {
+    const permissionTarget = createPermissionTarget()
+    const onPermissionRequest = vi.fn()
+    const userFn = vi.fn(async () => ({
+      behavior: 'allow' as const,
+    }))
+    const forced = { behavior: 'ask' as const, message: 'confirm?' }
+
+    const canUseTool = createExternalCanUseTool(
+      userFn,
+      async () => ({ behavior: 'deny' as const, message: 'fallback' }),
+      permissionTarget,
+      onPermissionRequest,
+      undefined,
+      50,
+      'test-session-default',
+    )
+
+    const result = await canUseTool(
+      sdkAskTool,
+      {},
+      toolUseContextForPermissionMode('default'),
+      {} as any,
+      'default-external-force-ask',
+      forced,
+    )
+
+    expect(result).toBe(forced)
+    expect(userFn).not.toHaveBeenCalled()
     expect(onPermissionRequest).not.toHaveBeenCalled()
     expect(permissionTarget.pendingPermissionPrompts.size).toBe(0)
+  })
+
+  test('fullAccess preserves forced guidance prompts for SDK callbacks', async () => {
+    const permissionTarget = createPermissionTarget()
+    const onPermissionRequest = vi.fn((message: any) => {
+      const pending = permissionTarget.pendingPermissionPrompts.get(message.tool_use_id)
+      pending!.resolve({
+        behavior: 'allow' as const,
+        updatedInput: { answer: 'option-b' },
+      })
+    })
+
+    const canUseTool = createExternalCanUseTool(
+      undefined,
+      async () => ({ behavior: 'deny' as const, message: 'fallback' }),
+      permissionTarget,
+      onPermissionRequest,
+      undefined,
+      50,
+      'test-session-full-access',
+    )
+
+    const result = await canUseTool(
+      sdkGuidanceTool,
+      { raw: true },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-forced-guidance',
+      {
+        behavior: 'ask' as const,
+        message: 'Choose an option',
+        updatedInput: { normalizedByHook: true },
+      },
+    )
+
+    expect(result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { answer: 'option-b' },
+    })
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(onPermissionRequest.mock.calls[0][0].input).toEqual({
+      normalized: true,
+    })
+  })
+
+  test('fullAccess still respects SDK canUseTool callbacks', async () => {
+    const permissionTarget = createPermissionTarget()
+    const onPermissionRequest = vi.fn()
+    const userFn = vi.fn(async () => ({
+      behavior: 'deny' as const,
+      message: 'denied by host policy',
+    }))
+    const fallback = vi.fn(async () => ({
+      behavior: 'deny' as const,
+      message: 'fallback should not run',
+    }))
+
+    const canUseTool = createExternalCanUseTool(
+      userFn,
+      fallback,
+      permissionTarget,
+      onPermissionRequest,
+      undefined,
+      50,
+      'test-session-full-access',
+    )
+
+    const result = await canUseTool(
+      sdkAskTool,
+      { raw: true },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-external-no-force',
+      undefined,
+    )
+
+    expect(result).toMatchObject({
+      behavior: 'deny',
+      message: 'denied by host policy',
+    })
+    expect(userFn).toHaveBeenCalledTimes(1)
+    expect(userFn).toHaveBeenCalledWith(
+      'SDKAskTool',
+      { normalized: true },
+      { toolUseID: 'full-access-external-no-force' },
+    )
+    expect(fallback).not.toHaveBeenCalled()
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(permissionTarget.pendingPermissionPrompts.size).toBe(0)
+  })
+
+  test('fullAccess preserves SDK callbacks for guidance prompts', async () => {
+    const permissionTarget = createPermissionTarget()
+    const onPermissionRequest = vi.fn((message: any) => {
+      const pending = permissionTarget.pendingPermissionPrompts.get(message.tool_use_id)
+      pending!.resolve({
+        behavior: 'allow' as const,
+        updatedInput: { answer: 'option-a' },
+      })
+    })
+
+    const canUseTool = createExternalCanUseTool(
+      undefined,
+      async () => ({ behavior: 'deny' as const, message: 'fallback' }),
+      permissionTarget,
+      onPermissionRequest,
+      undefined,
+      50,
+      'test-session-full-access',
+    )
+
+    const result = await canUseTool(
+      sdkGuidanceTool,
+      { raw: true },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-guidance',
+      undefined,
+    )
+
+    expect(result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { answer: 'option-a' },
+    })
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
   })
 
   test('permission request message includes uuid and session_id matching schema', async () => {

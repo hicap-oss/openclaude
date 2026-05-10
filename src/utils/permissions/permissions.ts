@@ -1235,6 +1235,14 @@ async function hasPermissionsToUseToolInner(
     return toolPermissionResult
   }
 
+  // 1e. Tool requires user interaction even in bypass mode
+  if (
+    tool.requiresUserInteraction?.() &&
+    toolPermissionResult?.behavior === 'ask'
+  ) {
+    return toolPermissionResult
+  }
+
   appState = context.getAppState()
   isFullAccessMode = appState.toolPermissionContext.mode === 'fullAccess'
   if (isFullAccessMode) {
@@ -1246,14 +1254,6 @@ async function hasPermissionsToUseToolInner(
         mode: 'fullAccess',
       },
     }
-  }
-
-  // 1e. Tool requires user interaction even in bypass mode
-  if (
-    tool.requiresUserInteraction?.() &&
-    toolPermissionResult?.behavior === 'ask'
-  ) {
-    return toolPermissionResult
   }
 
   // 1f. Content-specific ask rules from tool.checkPermissions take precedence

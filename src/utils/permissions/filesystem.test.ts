@@ -56,6 +56,20 @@ describe('OpenClaude commit message temp file permissions', () => {
     })
   })
 
+  test('allows the project-local OPENCLAUDE_COMMIT_MSG file in fullAccess mode', () => {
+    const result = checkWritePermissionForTool(
+      writeTool,
+      { file_path: join(projectDir, '.git', 'OPENCLAUDE_COMMIT_MSG') },
+      permissionContext('fullAccess'),
+    )
+
+    expect(result.behavior).toBe('allow')
+    expect(result.decisionReason).toMatchObject({
+      type: 'other',
+      reason: 'OpenClaude commit message file is allowed for writing',
+    })
+  })
+
   test('still prompts for the commit message file in default mode', () => {
     const result = checkWritePermissionForTool(
       writeTool,

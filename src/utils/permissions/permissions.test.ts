@@ -33,6 +33,17 @@ const userInteractionTool = {
   },
 } as Tool<Record<string, never>>
 
+const plainAskRuleTool = {
+  name: 'PlainAskRuleTool',
+  inputSchema: z.object({}),
+  async checkPermissions() {
+    return {
+      behavior: 'passthrough',
+      message: '',
+    }
+  },
+} as Tool<Record<string, never>>
+
 const contentAskTool = {
   name: 'ContentAskTool',
   inputSchema: z.object({}),
@@ -116,10 +127,10 @@ describe('permission modes and safety checks', () => {
 
   test('fullAccess bypasses entire-tool ask rules', async () => {
     const result = await hasPermissionsToUseTool(
-      userInteractionTool,
+      plainAskRuleTool,
       {},
       contextFor('fullAccess', {
-        alwaysAskRules: { session: ['UserInteractionTool'] },
+        alwaysAskRules: { session: ['PlainAskRuleTool'] },
       }) as never,
       {} as never,
       'tool-use-id',
@@ -132,7 +143,7 @@ describe('permission modes and safety checks', () => {
     })
   })
 
-  test('fullAccess bypasses requiresUserInteraction permission prompts', async () => {
+  test('fullAccess preserves user interaction prompts', async () => {
     const result = await hasPermissionsToUseTool(
       userInteractionTool,
       {},
@@ -141,11 +152,8 @@ describe('permission modes and safety checks', () => {
       'tool-use-id',
     )
 
-    expect(result.behavior).toBe('allow')
-    expect(result.decisionReason).toMatchObject({
-      type: 'mode',
-      mode: 'fullAccess',
-    })
+    expect(result.behavior).toBe('ask')
+    expect(result.message).toBe('User interaction requires approval')
   })
 
   test('fullAccess bypasses content-specific ask-rule prompts', async () => {
