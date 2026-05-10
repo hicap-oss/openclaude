@@ -424,17 +424,17 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               // These mirror print.ts handleSetPermissionMode; the bridge
               // can't import the checks directly (bootstrap-isolation), so
               // it relies on this verdict to emit the error response.
-              if (mode === 'bypassPermissions') {
+              if (mode === 'bypassPermissions' || mode === 'fullAccess') {
                 if (isBypassPermissionsModeDisabled()) {
                   return {
                     ok: false,
-                    error: 'Cannot set permission mode to bypassPermissions because it is disabled by settings or configuration'
+                    error: `Cannot set permission mode to ${mode} because it is disabled by settings or configuration`
                   };
                 }
                 if (!store.getState().toolPermissionContext.isBypassPermissionsModeAvailable) {
                   return {
                     ok: false,
-                    error: 'Cannot set permission mode to bypassPermissions. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json'
+                    error: `Cannot set permission mode to ${mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`
                   };
                 }
               }

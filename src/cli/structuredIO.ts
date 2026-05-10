@@ -541,15 +541,19 @@ export class StructuredIO {
       toolUseID: string,
       forceDecision?: PermissionDecision,
     ): Promise<PermissionDecision> => {
+      const shouldBypassForcedAsk =
+        forceDecision?.behavior === 'ask' &&
+        toolUseContext.getAppState().toolPermissionContext.mode === 'fullAccess'
       const mainPermissionResult =
-        forceDecision ??
-        (await hasPermissionsToUseTool(
+        forceDecision !== undefined && !shouldBypassForcedAsk
+          ? forceDecision
+          : await hasPermissionsToUseTool(
           tool,
           input,
           toolUseContext,
           assistantMessage,
           toolUseID,
-        ))
+        )
       // If the tool is allowed or denied, return the result
       if (
         mainPermissionResult.behavior === 'allow' ||

@@ -109,7 +109,7 @@ export type PermissionResult = ({
     destination: 'userSettings' | 'projectSettings' | 'localSettings' | 'session' | 'cliArg'
   }) | ({
     type: 'setMode'
-    mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'
+    mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'fullAccess' | 'plan' | 'dontAsk'
     destination: 'userSettings' | 'projectSettings' | 'localSettings' | 'session' | 'cliArg'
   }) | ({
     type: 'addDirectories'
@@ -208,6 +208,8 @@ export type QueryPermissionMode =
   | 'auto-accept'
   | 'bypass-permissions'
   | 'bypassPermissions'
+  | 'full-access'
+  | 'fullAccess'
   | 'acceptEdits'
 
 export type QueryOptions = {

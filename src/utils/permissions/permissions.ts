@@ -1074,6 +1074,7 @@ export async function checkRuleBasedPermissions(
   context: ToolUseContext,
 ): Promise<PermissionAskDecision | PermissionDenyDecision | null> {
   const appState = context.getAppState()
+  const isFullAccessMode = appState.toolPermissionContext.mode === 'fullAccess'
 
   // 1a. Entire tool is denied by rule
   const denyRule = getDenyRuleForTool(appState.toolPermissionContext, tool)
@@ -1097,7 +1098,7 @@ export async function checkRuleBasedPermissions(
       SandboxManager.isAutoAllowBashIfSandboxedEnabled() &&
       shouldUseSandbox(input)
 
-    if (!canSandboxAutoAllow) {
+    if (!canSandboxAutoAllow && !isFullAccessMode) {
       return {
         behavior: 'ask',
         decisionReason: {
@@ -1131,6 +1132,10 @@ export async function checkRuleBasedPermissions(
     return toolPermissionResult
   }
 
+  if (isFullAccessMode) {
+    return null
+  }
+
   // 1f. Content-specific ask rules from tool.checkPermissions
   // (e.g. Bash(npm publish:*) → {ask, type:'rule', ruleBehavior:'ask'})
   if (
@@ -1143,10 +1148,12 @@ export async function checkRuleBasedPermissions(
 
   // 1g. Safety checks (e.g. .git/, .claude/, .vscode/, shell configs) are
   // bypass-immune — they must prompt even when a PreToolUse hook returned
-  // allow. checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these.
+  // allow. Full Access is the explicit second-level opt-in that skips them.
+  // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these.
   if (
     toolPermissionResult?.behavior === 'ask' &&
-    toolPermissionResult.decisionReason?.type === 'safetyCheck'
+    toolPermissionResult.decisionReason?.type === 'safetyCheck' &&
+    appState.toolPermissionContext.mode !== 'fullAccess'
   ) {
     return toolPermissionResult
   }
@@ -1165,6 +1172,7 @@ async function hasPermissionsToUseToolInner(
   }
 
   let appState = context.getAppState()
+  let isFullAccessMode = appState.toolPermissionContext.mode === 'fullAccess'
 
   // 1. Check if the tool is denied
   // 1a. Entire tool is denied
@@ -1192,7 +1200,7 @@ async function hasPermissionsToUseToolInner(
       SandboxManager.isAutoAllowBashIfSandboxedEnabled() &&
       shouldUseSandbox(input)
 
-    if (!canSandboxAutoAllow) {
+    if (!canSandboxAutoAllow && !isFullAccessMode) {
       return {
         behavior: 'ask',
         decisionReason: {
@@ -1227,6 +1235,19 @@ async function hasPermissionsToUseToolInner(
     return toolPermissionResult
   }
 
+  appState = context.getAppState()
+  isFullAccessMode = appState.toolPermissionContext.mode === 'fullAccess'
+  if (isFullAccessMode) {
+    return {
+      behavior: 'allow',
+      updatedInput: getUpdatedInputOrFallback(toolPermissionResult, input),
+      decisionReason: {
+        type: 'mode',
+        mode: 'fullAccess',
+      },
+    }
+  }
+
   // 1e. Tool requires user interaction even in bypass mode
   if (
     tool.requiresUserInteraction?.() &&
@@ -1250,11 +1271,13 @@ async function hasPermissionsToUseToolInner(
   }
 
   // 1g. Safety checks (e.g. .git/, .claude/, .vscode/, shell configs) are
-  // bypass-immune — they must prompt even in bypassPermissions mode.
+  // bypass-immune — they must prompt even in bypassPermissions mode. Full
+  // Access is the explicit second-level opt-in that skips these prompts.
   // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these paths.
   if (
     toolPermissionResult?.behavior === 'ask' &&
-    toolPermissionResult.decisionReason?.type === 'safetyCheck'
+    toolPermissionResult.decisionReason?.type === 'safetyCheck' &&
+    appState.toolPermissionContext.mode !== 'fullAccess'
   ) {
     return toolPermissionResult
   }
@@ -1267,6 +1290,7 @@ async function hasPermissionsToUseToolInner(
   // - Plan mode when the user originally started with bypass mode (isBypassPermissionsModeAvailable)
   const shouldBypassPermissions =
     appState.toolPermissionContext.mode === 'bypassPermissions' ||
+    appState.toolPermissionContext.mode === 'fullAccess' ||
     (appState.toolPermissionContext.mode === 'plan' &&
       appState.toolPermissionContext.isBypassPermissionsModeAvailable)
   if (shouldBypassPermissions) {

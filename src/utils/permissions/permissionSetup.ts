@@ -25,6 +25,7 @@ import {
 import {
   type PermissionMode,
   permissionModeFromString,
+  permissionModeTitle,
 } from './PermissionMode.js'
 import { applyPermissionRulesToPermissionContext } from './permissions.js'
 import { loadAllPermissionRulesFromDisk } from './permissionsLoader.js'
@@ -776,18 +777,21 @@ export function initialPermissionModeFromCLI({
   let result: { mode: PermissionMode; notification?: string } | undefined
 
   for (const mode of orderedModes) {
-    if (mode === 'bypassPermissions' && disableBypassPermissionsMode) {
+    if (
+      (mode === 'bypassPermissions' || mode === 'fullAccess') &&
+      disableBypassPermissionsMode
+    ) {
       if (growthBookDisableBypassPermissionsMode) {
-        logForDebugging('bypassPermissions mode is disabled by Statsig gate', {
+        logForDebugging(`${mode} mode is disabled by Statsig gate`, {
           level: 'warn',
         })
         notification =
-          'Bypass permissions mode was disabled by your organization policy'
+          `${permissionModeTitle(mode)} mode was disabled by your organization policy`
       } else {
-        logForDebugging('bypassPermissions mode is disabled by settings', {
+        logForDebugging(`${mode} mode is disabled by settings`, {
           level: 'warn',
         })
-        notification = 'Bypass permissions mode was disabled by settings'
+        notification = `${permissionModeTitle(mode)} mode was disabled by settings`
       }
       continue // Skip this mode if it's disabled
     }
@@ -940,6 +944,7 @@ export async function initializeToolPermissionContext({
   const settingsAllowBypassPermissionsMode = hasAllowBypassPermissionsMode()
   const isBypassPermissionsModeAvailable =
     (permissionMode === 'bypassPermissions' ||
+      permissionMode === 'fullAccess' ||
       allowDangerouslySkipPermissions ||
       settingsAllowBypassPermissionsMode) &&
     !growthBookDisableBypassPermissionsMode &&
@@ -1391,7 +1396,10 @@ export function createDisabledBypassPermissionsContext(
   currentContext: ToolPermissionContext,
 ): ToolPermissionContext {
   let updatedContext = currentContext
-  if (currentContext.mode === 'bypassPermissions') {
+  if (
+    currentContext.mode === 'bypassPermissions' ||
+    currentContext.mode === 'fullAccess'
+  ) {
     updatedContext = applyPermissionUpdate(currentContext, {
       type: 'setMode',
       mode: 'default',
@@ -1478,7 +1486,11 @@ export function prepareContextForPlanMode(
         prePlanMode: 'auto',
       }
     }
-    if (planAutoMode && currentMode !== 'bypassPermissions') {
+    if (
+      planAutoMode &&
+      currentMode !== 'bypassPermissions' &&
+      currentMode !== 'fullAccess'
+    ) {
       autoModeStateModule?.setAutoModeActive(true)
       return {
         ...stripDangerousPermissionsForAutoMode(context),
@@ -1507,7 +1519,10 @@ export function transitionPlanAutoMode(
   if (context.mode !== 'plan') return context
   // Mirror prepareContextForPlanMode's entry-time exclusion — never activate
   // auto mid-plan when the user entered from a dangerous mode.
-  if (context.prePlanMode === 'bypassPermissions') {
+  if (
+    context.prePlanMode === 'bypassPermissions' ||
+    context.prePlanMode === 'fullAccess'
+  ) {
     return context
   }
 

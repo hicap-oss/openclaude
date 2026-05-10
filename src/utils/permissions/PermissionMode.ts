@@ -70,6 +70,13 @@ const PERMISSION_MODE_CONFIG: Partial<
     color: 'error',
     external: 'bypassPermissions',
   },
+  fullAccess: {
+    title: 'Full Access',
+    shortTitle: 'Full',
+    symbol: '▶▶',
+    color: 'error',
+    external: 'fullAccess',
+  },
   dontAsk: {
     title: "Don't Ask",
     shortTitle: 'DontAsk',

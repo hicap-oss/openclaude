@@ -1392,7 +1392,7 @@ async function run(): Promise<CommanderCommand> {
     });
 
     // Store session bypass permissions mode for trust dialog check
-    setSessionBypassPermissionsMode(permissionMode === 'bypassPermissions');
+    setSessionBypassPermissionsMode(permissionMode === 'bypassPermissions' || permissionMode === 'fullAccess');
     if (feature('TRANSCRIPT_CLASSIFIER')) {
       // autoModeFlagCli is the "did the user intend auto this session" signal.
       // Set when: --enable-auto-mode, --permission-mode auto, resolved mode
@@ -2504,7 +2504,7 @@ async function run(): Promise<CommanderCommand> {
       githubActionInputs: process.env.GITHUB_ACTION_INPUTS,
       dangerouslySkipPermissionsPassed: dangerouslySkipPermissions ?? false,
       permissionMode,
-      modeIsBypass: permissionMode === 'bypassPermissions',
+      modeIsBypass: permissionMode === 'bypassPermissions' || permissionMode === 'fullAccess',
       allowDangerouslySkipPermissionsPassed: allowDangerouslySkipPermissions,
       systemPromptFlag: systemPrompt ? options.systemPromptFile ? 'file' : 'flag' : undefined,
       appendSystemPromptFlag: appendSystemPrompt ? options.appendSystemPromptFile ? 'file' : 'flag' : undefined,
@@ -2647,7 +2647,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Check if bypassPermissions should be disabled based on Statsig gate
       // This runs in parallel to the code below, to avoid blocking the main loop.
-      if (toolPermissionContext.mode === 'bypassPermissions' || allowDangerouslySkipPermissions) {
+      if (toolPermissionContext.mode === 'bypassPermissions' || toolPermissionContext.mode === 'fullAccess' || allowDangerouslySkipPermissions) {
         void checkAndDisableBypassPermissions(toolPermissionContext);
       }
 

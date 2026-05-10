@@ -1057,6 +1057,7 @@ function runHeadlessStreaming(
       newMode === 'default' ||
       newMode === 'acceptEdits' ||
       newMode === 'bypassPermissions' ||
+      newMode === 'fullAccess' ||
       newMode === 'plan' ||
       newMode === (feature('TRANSCRIPT_CLASSIFIER') && 'auto') ||
       newMode === 'dontAsk'
@@ -4147,15 +4148,19 @@ export function createCanUseToolWithPermissionPrompt(
     toolUseId,
     forceDecision,
   ) => {
+    const shouldBypassForcedAsk =
+      forceDecision?.behavior === 'ask' &&
+      toolUseContext.getAppState().toolPermissionContext.mode === 'fullAccess'
     const mainPermissionResult =
-      forceDecision ??
-      (await hasPermissionsToUseTool(
+      forceDecision !== undefined && !shouldBypassForcedAsk
+        ? forceDecision
+        : await hasPermissionsToUseTool(
         tool,
         input,
         toolUseContext,
         assistantMessage,
         toolUseId,
-      ))
+      )
 
     // If the tool is allowed or denied, return the result
     if (
@@ -4271,15 +4276,20 @@ export function getCanUseToolFn(
       assistantMessage,
       toolUseId,
       forceDecision,
-    ) =>
-      forceDecision ??
-      (await hasPermissionsToUseTool(
+    ) => {
+      const shouldBypassForcedAsk =
+        forceDecision?.behavior === 'ask' &&
+        toolUseContext.getAppState().toolPermissionContext.mode === 'fullAccess'
+      return forceDecision !== undefined && !shouldBypassForcedAsk
+        ? forceDecision
+        : await hasPermissionsToUseTool(
         tool,
         input,
         toolUseContext,
         assistantMessage,
         toolUseId,
-      ))
+      )
+    }
   }
   // Lazy lookup: MCP connects are per-server incremental in print mode, so
   // the tool may not be in appState yet at init time. Resolve on first call
@@ -4561,8 +4571,8 @@ function handleSetPermissionMode(
   toolPermissionContext: ToolPermissionContext,
   output: Stream<StdoutMessage>,
 ): ToolPermissionContext {
-  // Check if trying to switch to bypassPermissions mode
-  if (request.mode === 'bypassPermissions') {
+  // Check if trying to switch to a dangerous permission mode
+  if (request.mode === 'bypassPermissions' || request.mode === 'fullAccess') {
     if (isBypassPermissionsModeDisabled()) {
       output.enqueue({
         type: 'control_response',
@@ -4570,7 +4580,7 @@ function handleSetPermissionMode(
           subtype: 'error',
           request_id: requestId,
           error:
-            'Cannot set permission mode to bypassPermissions because it is disabled by settings or configuration',
+            `Cannot set permission mode to ${request.mode} because it is disabled by settings or configuration`,
         },
       })
       return toolPermissionContext
@@ -4582,7 +4592,7 @@ function handleSetPermissionMode(
           subtype: 'error',
           request_id: requestId,
           error:
-            'Cannot set permission mode to bypassPermissions. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json',
+            `Cannot set permission mode to ${request.mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`,
         },
       })
       return toolPermissionContext

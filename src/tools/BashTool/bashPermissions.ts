@@ -1443,7 +1443,11 @@ function buildPendingClassifierCheck(
   // Skip in auto mode - auto mode classifier handles all permission decisions
   if (feature('TRANSCRIPT_CLASSIFIER') && toolPermissionContext.mode === 'auto')
     return undefined
-  if (toolPermissionContext.mode === 'bypassPermissions') return undefined
+  if (
+    toolPermissionContext.mode === 'bypassPermissions' ||
+    toolPermissionContext.mode === 'fullAccess'
+  )
+    return undefined
 
   const allowDescriptions = getBashPromptAllowDescriptions(
     toolPermissionContext,
@@ -1481,7 +1485,11 @@ export function startSpeculativeClassifierCheck(
   if (!isClassifierPermissionsEnabled()) return false
   if (feature('TRANSCRIPT_CLASSIFIER') && toolPermissionContext.mode === 'auto')
     return false
-  if (toolPermissionContext.mode === 'bypassPermissions') return false
+  if (
+    toolPermissionContext.mode === 'bypassPermissions' ||
+    toolPermissionContext.mode === 'fullAccess'
+  )
+    return false
   const allowDescriptions = getBashPromptAllowDescriptions(
     toolPermissionContext,
   )

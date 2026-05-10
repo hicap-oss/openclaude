@@ -29,7 +29,7 @@ import { usesAnthropicAccountFlow } from './utils/model/providers.js';
 import type { PermissionMode } from './utils/permissions/PermissionMode.js';
 import { getBaseRenderOptions } from './utils/renderOptions.js';
 import { getSettingsWithAllErrors } from './utils/settings/allErrors.js';
-import { hasAutoModeOptIn, hasSkipDangerousModePermissionPrompt } from './utils/settings/settings.js';
+import { hasAutoModeOptIn, hasSkipDangerousModePermissionPrompt, hasSkipFullAccessModePermissionPrompt } from './utils/settings/settings.js';
 export function completeOnboarding(): void {
   saveGlobalConfig(current => ({
     ...current,
@@ -225,11 +225,13 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
       });
     }
   }
-  if ((permissionMode === 'bypassPermissions' || allowDangerouslySkipPermissions) && !hasSkipDangerousModePermissionPrompt()) {
+  const dangerousMode = permissionMode === 'fullAccess' ? 'fullAccess' : 'bypassPermissions';
+  const hasAcceptedDangerousModePrompt = dangerousMode === 'fullAccess' ? hasSkipFullAccessModePermissionPrompt() : hasSkipDangerousModePermissionPrompt();
+  if ((permissionMode === 'bypassPermissions' || permissionMode === 'fullAccess' || allowDangerouslySkipPermissions) && !hasAcceptedDangerousModePrompt) {
     const {
       BypassPermissionsModeDialog
     } = await import('./components/BypassPermissionsModeDialog.js');
-    await showSetupDialog(root, done => <BypassPermissionsModeDialog onAccept={done} />);
+    await showSetupDialog(root, done => <BypassPermissionsModeDialog mode={dangerousMode} onAccept={done} />);
   }
   if (feature('TRANSCRIPT_CLASSIFIER')) {
     // Only show the opt-in dialog if auto mode actually resolved — if the

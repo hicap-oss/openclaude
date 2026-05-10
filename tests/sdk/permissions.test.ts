@@ -12,6 +12,19 @@ import type { PermissionResolveDecision } from '../../src/entrypoints/sdk/permis
 import { getEmptyToolPermissionContext } from '../../src/Tool.js'
 import { filterToolsByDenyRules } from '../../src/tools.js'
 
+function toolUseContextForPermissionMode(mode: string) {
+  return {
+    getAppState: () => ({
+      toolPermissionContext: {
+        ...getEmptyToolPermissionContext(),
+        mode,
+        isBypassPermissionsModeAvailable:
+          mode === 'bypassPermissions' || mode === 'fullAccess',
+      },
+    }),
+  } as any
+}
+
 describe('buildPermissionContext', () => {
   test('returns default mode when no permissionMode specified', () => {
     const ctx = buildPermissionContext({ cwd: '/tmp' })
@@ -42,6 +55,18 @@ describe('buildPermissionContext', () => {
   test('maps bypassPermissions mode', () => {
     const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'bypassPermissions' })
     expect(ctx.mode).toBe('bypassPermissions')
+    expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
+  })
+
+  test('maps fullAccess mode', () => {
+    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'fullAccess' })
+    expect(ctx.mode).toBe('fullAccess')
+    expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
+  })
+
+  test('maps full-access mode', () => {
+    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'full-access' })
+    expect(ctx.mode).toBe('fullAccess')
     expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
   })
 
@@ -165,6 +190,32 @@ describe('createDefaultCanUseTool', () => {
 
     expect(logger.warn).not.toHaveBeenCalled()
   })
+
+  test('fullAccess bypasses forced ask decisions', async () => {
+    const ctx = getEmptyToolPermissionContext()
+    const logger = { warn: vi.fn() }
+    const canUseTool = createDefaultCanUseTool(ctx, logger)
+
+    const result = await canUseTool(
+      { name: 'Bash' } as any,
+      { command: 'git status' },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-default-force-ask',
+      {
+        behavior: 'ask' as const,
+        message: 'confirm?',
+        updatedInput: { command: 'git status --short' },
+      },
+    )
+
+    expect(result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { command: 'git status --short' },
+      decisionReason: { type: 'mode', mode: 'fullAccess' },
+    })
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
 })
 
 describe('createExternalCanUseTool synchronous host response', () => {
@@ -200,6 +251,42 @@ describe('createExternalCanUseTool synchronous host response', () => {
 
     expect(result.behavior).toBe('allow')
     expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+  })
+
+  test('fullAccess bypasses forced ask without requesting host permission', async () => {
+    const permissionTarget = createPermissionTarget()
+    const onPermissionRequest = vi.fn()
+
+    const canUseTool = createExternalCanUseTool(
+      undefined,
+      async () => ({ behavior: 'deny' as const, message: 'fallback' }),
+      permissionTarget,
+      onPermissionRequest,
+      undefined,
+      50,
+      'test-session-full-access',
+    )
+
+    const result = await canUseTool(
+      { name: 'TestTool' } as any,
+      { action: 'run' },
+      toolUseContextForPermissionMode('fullAccess'),
+      {} as any,
+      'full-access-external-force-ask',
+      {
+        behavior: 'ask' as const,
+        message: 'confirm?',
+        updatedInput: { action: 'run-fast' },
+      },
+    )
+
+    expect(result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { action: 'run-fast' },
+      decisionReason: { type: 'mode', mode: 'fullAccess' },
+    })
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(permissionTarget.pendingPermissionPrompts.size).toBe(0)
   })
 
   test('permission request message includes uuid and session_id matching schema', async () => {

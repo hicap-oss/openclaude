@@ -191,6 +191,10 @@ export function buildPermissionContext(options: PermissionContextOptions): ToolP
     case 'bypassPermissions':
       internalMode = 'bypassPermissions'
       break
+    case 'full-access':
+    case 'fullAccess':
+      internalMode = 'fullAccess'
+      break
     default:
       internalMode = 'default'
   }
@@ -207,7 +211,11 @@ export function buildPermissionContext(options: PermissionContextOptions): ToolP
     ...base,
     mode: internalMode as ToolPermissionContext['mode'],
     isBypassPermissionsModeAvailable:
-      mode === 'bypass-permissions' || mode === 'bypassPermissions' || options.allowDangerouslySkipPermissions === true,
+      mode === 'bypass-permissions' ||
+      mode === 'bypassPermissions' ||
+      mode === 'full-access' ||
+      mode === 'fullAccess' ||
+      options.allowDangerouslySkipPermissions === true,
     alwaysDenyRules: {
       ...base.alwaysDenyRules,
       cliArg: options.disallowedTools ?? [],
@@ -229,7 +237,7 @@ export function buildPermissionContext(options: PermissionContextOptions): ToolP
  *
  * The flow:
  * 1. QueryEngine calls canUseTool(tool, input, ..., toolUseID, forceDecision)
- * 2. If forceDecision is set, honor it immediately
+ * 2. If forceDecision is set, honor it immediately, except Full Access ask prompts are allowed
  * 3. If user canUseTool callback exists, delegate to it
  * 4. Otherwise, emit permission_request message and await external resolution
  *
@@ -258,8 +266,19 @@ export function createExternalCanUseTool(
   return async (tool, input, toolUseContext, assistantMessage, toolUseID, forceDecision): Promise<PermissionDecision> => {
     // Cast input to ensure type compatibility with PermissionDecision
     const typedInput = input as Record<string, unknown>
-    // If a forced decision was passed in, honor it
-    if (forceDecision) return forceDecision
+    if (forceDecision) {
+      if (
+        forceDecision.behavior === 'ask' &&
+        toolUseContext.getAppState().toolPermissionContext.mode === 'fullAccess'
+      ) {
+        return {
+          behavior: 'allow' as const,
+          updatedInput: forceDecision.updatedInput ?? typedInput,
+          decisionReason: { type: 'mode' as const, mode: 'fullAccess' },
+        }
+      }
+      return forceDecision
+    }
 
     // If the user provided a synchronous canUseTool callback, use it
     if (userFn) {
@@ -564,8 +583,20 @@ export function createDefaultCanUseTool(
   logger?: SDKLogger,
 ): CanUseToolFn {
   const log = logger ?? defaultLogger
-  return async (tool, input, _toolUseContext, _assistantMessage, _toolUseID, forceDecision) => {
-    if (forceDecision) return forceDecision
+  return async (tool, input, toolUseContext, _assistantMessage, _toolUseID, forceDecision) => {
+    if (forceDecision) {
+      if (
+        forceDecision.behavior === 'ask' &&
+        toolUseContext.getAppState().toolPermissionContext.mode === 'fullAccess'
+      ) {
+        return {
+          behavior: 'allow' as const,
+          updatedInput: forceDecision.updatedInput ?? input,
+          decisionReason: { type: 'mode' as const, mode: 'fullAccess' },
+        }
+      }
+      return forceDecision
+    }
     if (!warnedDefaultPermissions) {
       warnedDefaultPermissions = true
       log.warn(

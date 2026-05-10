@@ -339,6 +339,8 @@ export type QueryPermissionMode =
   | 'auto-accept'
   | 'bypass-permissions'
   | 'bypassPermissions'
+  | 'full-access'
+  | 'fullAccess'
   | 'acceptEdits'
 
 /**
