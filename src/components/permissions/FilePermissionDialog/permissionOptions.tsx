@@ -44,6 +44,8 @@ export type PermissionOption = {
   type: 'accept-session';
   scope?: 'claude-folder' | 'global-claude-folder';
 } | {
+  type: 'accept-full-access';
+} | {
   type: 'reject';
 };
 export type PermissionOptionWithLabel = OptionWithDescription<string> & {
@@ -93,6 +95,7 @@ export function getFilePermissionOptions({
     });
   }
   const inAllowedPath = pathInAllowedWorkingPath(filePath, toolPermissionContext);
+  const showFullAccessOption = toolPermissionContext.isBypassPermissionsModeAvailable;
 
   // Check if this is a .claude/ folder path (project or global)
   const inClaudeFolder = isInClaudeFolder(filePath);
@@ -145,6 +148,15 @@ export function getFilePermissionOptions({
       value: 'yes-session',
       option: {
         type: 'accept-session'
+      }
+    });
+  }
+  if (showFullAccessOption) {
+    options.push({
+      label: <Text color="error">Yes, and enable Full Access for this session</Text>,
+      value: 'yes-full-access',
+      option: {
+        type: 'accept-full-access'
       }
     });
   }

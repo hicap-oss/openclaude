@@ -14,6 +14,7 @@ import { usePermissionRequestLogging } from '../hooks.js';
 import { PermissionDialog } from '../PermissionDialog.js';
 import type { ToolUseConfirm } from '../PermissionRequest.js';
 import type { WorkerBadgeProps } from '../WorkerBadge.js';
+import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js';
 import type { IDEDiffSupport } from './ideDiffConfig.js';
 import type { FileOperationType, PermissionOption } from './permissionOptions.js';
 import { type ToolInput, useFilePermissionDialog } from './useFilePermissionDialog.js';
@@ -152,10 +153,23 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
     showingDiffInIDE,
     ideName
   } = useDiffInIDE(diffParams);
+  const {
+    confirmDangerousMode,
+    dangerousModeDialog
+  } = useDangerousModeConfirmation();
   const onChange = (option_0: PermissionOption, feedback?: string) => {
     closeTabInIDE?.();
+    if (option_0.type === 'accept-full-access') {
+      confirmDangerousMode('fullAccess', () => {
+        fileDialogResult.onChange(option_0, parsedInput, feedback?.trim());
+      });
+      return;
+    }
     fileDialogResult.onChange(option_0, parsedInput, feedback?.trim());
   };
+  if (dangerousModeDialog) {
+    return dangerousModeDialog;
+  }
   if (showingDiffInIDE && ideDiffConfig && path) {
     return <ShowInIDEPrompt onChange={(option_1: PermissionOption, _input, feedback_0?: string) => onChange(option_1, feedback_0)} options={options} filePath={path} input={parsedInput} ideName={ideName} symlinkTarget={symlinkTarget} rejectFeedback={rejectFeedback} acceptFeedback={acceptFeedback} setFocusedOption={setFocusedOption} onInputModeToggle={handleInputModeToggle} focusedOption={focusedOption} yesInputMode={yesInputMode} noInputMode={noInputMode} />;
   }

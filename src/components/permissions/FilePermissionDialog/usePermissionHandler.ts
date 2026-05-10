@@ -175,11 +175,39 @@ function handleReject(
   toolUseConfirm.onReject(options?.feedback)
 }
 
+function handleAcceptFullAccess(
+  params: PermissionHandlerParams,
+  options?: PermissionHandlerOptions,
+): void {
+  const { messageId, toolUseConfirm, onDone, completionType, languageName } =
+    params
+
+  logPermissionEvent('accept', completionType, languageName, messageId)
+
+  logEvent('tengu_accept_submitted', {
+    toolName: sanitizeToolNameForAnalytics(
+      toolUseConfirm.tool.name,
+    ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+    isMcp: toolUseConfirm.tool.isMcp ?? false,
+    has_instructions: !!options?.feedback,
+    instructions_length: options?.feedback?.length ?? 0,
+    entered_feedback_mode: options?.enteredFeedbackMode ?? false,
+  })
+
+  onDone()
+  toolUseConfirm.onAllow(
+    toolUseConfirm.input,
+    [{ type: 'setMode', mode: 'fullAccess', destination: 'session' }],
+    options?.feedback,
+  )
+}
+
 export const PERMISSION_HANDLERS: Record<
   PermissionOption['type'],
   (params: PermissionHandlerParams, options?: PermissionHandlerOptions) => void
 > = {
   'accept-once': handleAcceptOnce,
   'accept-session': handleAcceptSession,
+  'accept-full-access': handleAcceptFullAccess,
   reject: handleReject,
 }

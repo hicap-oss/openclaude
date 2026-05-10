@@ -6,7 +6,7 @@ import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpda
 import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js';
 import type { OptionWithDescription } from '../../CustomSelect/select.js';
 import { generateShellSuggestionsLabel } from '../shellPermissionHelpers.js';
-export type BashToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'yes-classifier-reviewed' | 'no';
+export type BashToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'yes-classifier-reviewed' | 'yes-full-access' | 'no';
 
 /**
  * Check if a description already exists in the allow list.
@@ -39,6 +39,7 @@ export function bashToolUseOptions({
   existingAllowDescriptions = [],
   yesInputMode = false,
   noInputMode = false,
+  isDangerousModeAvailable = false,
   editablePrefix,
   onEditablePrefixChange
 }: {
@@ -53,6 +54,7 @@ export function bashToolUseOptions({
   existingAllowDescriptions?: string[];
   yesInputMode?: boolean;
   noInputMode?: boolean;
+  isDangerousModeAvailable?: boolean;
   /** Editable prefix rule content (e.g., "npm run:*"). When set, replaces Haiku-based suggestions. */
   editablePrefix?: string;
   /** Callback when the user edits the prefix value. */
@@ -124,6 +126,14 @@ export function bashToolUseOptions({
         showLabelWithValue: true,
         labelValueSeparator: ': ',
         resetCursorOnUpdate: true
+      });
+    }
+    const hasPersistentAllowOption = options.some(o => o.value !== 'yes');
+    if (hasPersistentAllowOption && isDangerousModeAvailable) {
+      options.push({
+        label: 'Yes, and enable Full Access for this session',
+        color: 'error',
+        value: 'yes-full-access'
       });
     }
   }

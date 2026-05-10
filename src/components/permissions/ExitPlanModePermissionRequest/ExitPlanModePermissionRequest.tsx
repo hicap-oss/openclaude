@@ -38,6 +38,7 @@ import { Markdown } from '../../Markdown.js';
 import { PermissionDialog } from '../PermissionDialog.js';
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
+import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js') : null;
@@ -47,11 +48,25 @@ import type { PastedContent } from '../../../utils/config.js';
 import type { ImageDimensions } from '../../../utils/imageResizer.js';
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../../utils/imageStore.js';
-type ResponseValue = 'yes-bypass-permissions' | 'yes-accept-edits' | 'yes-accept-edits-keep-context' | 'yes-default-keep-context' | 'yes-resume-auto-mode' | 'yes-auto-clear-context' | 'ultraplan' | 'no';
+type ResponseValue = 'yes-bypass-permissions' | 'yes-full-access' | 'yes-accept-edits' | 'yes-bypass-permissions-keep-context' | 'yes-full-access-keep-context' | 'yes-accept-edits-keep-context' | 'yes-default-keep-context' | 'yes-resume-auto-mode' | 'yes-auto-clear-context' | 'ultraplan' | 'no';
 type DangerousPlanExitMode = Extract<
   PermissionMode,
   'bypassPermissions' | 'fullAccess'
 >;
+
+function requiresDangerousModeConfirmation(value: ResponseValue): boolean {
+  return value === 'yes-bypass-permissions' || value === 'yes-full-access' || value === 'yes-bypass-permissions-keep-context' || value === 'yes-full-access-keep-context';
+}
+
+function dangerousModeForResponse(value: ResponseValue): DangerousPlanExitMode | null {
+  if (value === 'yes-full-access' || value === 'yes-full-access-keep-context') {
+    return 'fullAccess';
+  }
+  if (value === 'yes-bypass-permissions' || value === 'yes-bypass-permissions-keep-context') {
+    return 'bypassPermissions';
+  }
+  return null;
+}
 
 /**
  * Build permission updates for plan approval, including prompt-based rules if provided.
@@ -156,6 +171,10 @@ export function ExitPlanModePermissionRequest({
   const [planFeedback, setPlanFeedback] = useState('');
   const [pastedContents, setPastedContents] = useState<Record<number, PastedContent>>({});
   const nextPasteIdRef = useRef(0);
+  const {
+    confirmDangerousMode,
+    dangerousModeDialog
+  } = useDangerousModeConfirmation();
   const showClearContext = useAppState(s => s.settings.showClearContextOnPlanAccept) ?? false;
   const ultraplanSessionUrl = useAppState(s => s.ultraplanSessionUrl);
   const ultraplanLaunching = useAppState(s => s.ultraplanLaunching);
@@ -293,7 +312,7 @@ export function ExitPlanModePermissionRequest({
       return;
     }
 
-    // Shift+Tab immediately selects "auto-accept edits"
+    // Shift+Tab approves with feedback using the existing accept-edits path.
     if (e.shift && e.key === 'tab') {
       e.preventDefault();
       void handleResponse(showClearContext ? 'yes-accept-edits' : 'yes-accept-edits-keep-context');
@@ -362,15 +381,17 @@ export function ExitPlanModePermissionRequest({
     // The REPL will handle context clear and trigger a fresh query
     // Keep-context options skip this block and go through the normal flow below
     const isResumeAutoOption = feature('TRANSCRIPT_CLASSIFIER') ? value === 'yes-resume-auto-mode' : false;
-    const isKeepContextOption = value === 'yes-accept-edits-keep-context' || value === 'yes-default-keep-context' || isResumeAutoOption;
+    const isKeepContextOption = value === 'yes-bypass-permissions-keep-context' || value === 'yes-full-access-keep-context' || value === 'yes-accept-edits-keep-context' || value === 'yes-default-keep-context' || isResumeAutoOption;
     if (value !== 'no') {
       autoNameSessionFromPlan(currentPlan, setAppState, !isKeepContextOption);
     }
     if (value !== 'no' && !isKeepContextOption) {
       // Determine the permission mode based on the selected option
       let mode: PermissionMode = 'default';
-      if (value === 'yes-bypass-permissions' && dangerousPlanExitMode) {
-        mode = dangerousPlanExitMode;
+      if (value === 'yes-bypass-permissions') {
+        mode = 'bypassPermissions';
+      } else if (value === 'yes-full-access') {
+        mode = 'fullAccess';
       } else if (value === 'yes-accept-edits') {
         mode = 'acceptEdits';
       } else if (feature('TRANSCRIPT_CLASSIFIER') && value === 'yes-auto-clear-context' && isAutoModeGateEnabled()) {
@@ -457,6 +478,8 @@ export function ExitPlanModePermissionRequest({
     // Without this fallback the function would return without resolving the
     // dialog, leaving the query loop blocked and safety state corrupted.
     const keepContextModes: Record<string, PermissionMode> = {
+      'yes-bypass-permissions-keep-context': 'bypassPermissions',
+      'yes-full-access-keep-context': 'fullAccess',
       'yes-accept-edits-keep-context': dangerousPlanExitMode ?? 'acceptEdits',
       'yes-default-keep-context': 'default',
       ...(feature('TRANSCRIPT_CLASSIFIER') ? {
@@ -483,7 +506,8 @@ export function ExitPlanModePermissionRequest({
     // Handle standard approval options
     const standardModes: Record<string, PermissionMode> = {
       ...(dangerousPlanExitMode ? {
-        'yes-bypass-permissions': dangerousPlanExitMode
+        'yes-bypass-permissions': 'bypassPermissions' as const,
+        'yes-full-access': 'fullAccess' as const
       } : {}),
       'yes-accept-edits': 'acceptEdits'
     };
@@ -560,13 +584,24 @@ export function ExitPlanModePermissionRequest({
     onReject();
     toolUseConfirm.onReject();
   };
-  const useStickyFooter = !isEmpty && !!setStickyFooter;
+  const useStickyFooter = !isEmpty && !!setStickyFooter && !dangerousModeDialog;
   useLayoutEffect(() => {
     if (!useStickyFooter) return;
     setStickyFooter(<Box flexDirection="column" borderStyle="round" borderColor="planMode" borderLeft={false} borderRight={false} borderBottom={false} paddingX={1}>
         <Text dimColor>Would you like to proceed?</Text>
         <Box marginTop={1}>
-          <Select options={options} onChange={v => void handleResponseRef.current(v)} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
+          <Select options={options} onChange={v => {
+          if (requiresDangerousModeConfirmation(v)) {
+            const mode = dangerousModeForResponse(v);
+            if (mode) {
+              confirmDangerousMode(mode, () => {
+                void handleResponseRef.current(v);
+              });
+              return;
+            }
+          }
+          void handleResponseRef.current(v);
+        }} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
         </Box>
         {editorName && <Box flexDirection="row" gap={1} marginTop={1}>
             <Text dimColor>ctrl-g to edit in </Text>
@@ -584,6 +619,9 @@ export function ExitPlanModePermissionRequest({
     // onImagePaste/onRemoveImage are stable (useCallback/useRef-backed above)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useStickyFooter, setStickyFooter, options, pastedContents, editorName, isV2, planFilePath, showSaveMessage]);
+  if (dangerousModeDialog) {
+    return dangerousModeDialog;
+  }
 
   // Simplified UI for empty plans
   if (isEmpty) {
@@ -679,7 +717,18 @@ export function ExitPlanModePermissionRequest({
                   you like to proceed?
                 </Text>
                 <Box marginTop={1}>
-                  <Select options={options} onChange={handleResponse} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
+                  <Select options={options} onChange={v => {
+                if (requiresDangerousModeConfirmation(v)) {
+                  const mode = dangerousModeForResponse(v);
+                  if (mode) {
+                    confirmDangerousMode(mode, () => {
+                      void handleResponse(v);
+                    });
+                    return;
+                  }
+                }
+                void handleResponse(v);
+              }} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
                 </Box>
               </>}
           </Box>
@@ -727,12 +776,19 @@ export function buildPlanApprovalOptions({
         label: `Yes, clear context${usedLabel} and use auto mode`,
         value: 'yes-auto-clear-context'
       });
-    } else if (dangerousPlanExitMode) {
+    }
+    if (dangerousPlanExitMode) {
       options.push({
         label: `Yes, clear context${usedLabel} and ${getDangerousPlanExitLabel(dangerousPlanExitMode)}`,
-        value: 'yes-bypass-permissions'
+        value: dangerousPlanExitMode === 'fullAccess' ? 'yes-full-access' : 'yes-bypass-permissions'
       });
-    } else {
+      if (dangerousPlanExitMode !== 'fullAccess') {
+        options.push({
+          label: `Yes, clear context${usedLabel} and full access`,
+          value: 'yes-full-access'
+        });
+      }
+    } else if (!feature('TRANSCRIPT_CLASSIFIER') || !isAutoModeAvailable) {
       options.push({
         label: `Yes, clear context${usedLabel} and auto-accept edits`,
         value: 'yes-accept-edits'
@@ -746,12 +802,19 @@ export function buildPlanApprovalOptions({
       label: 'Yes, and use auto mode',
       value: 'yes-resume-auto-mode'
     });
-  } else if (dangerousPlanExitMode) {
+  }
+  if (dangerousPlanExitMode) {
     options.push({
       label: `Yes, and ${getDangerousPlanExitLabel(dangerousPlanExitMode)}`,
-      value: 'yes-accept-edits-keep-context'
+      value: dangerousPlanExitMode === 'fullAccess' ? 'yes-full-access-keep-context' : 'yes-bypass-permissions-keep-context'
     });
-  } else {
+    if (dangerousPlanExitMode !== 'fullAccess') {
+      options.push({
+        label: 'Yes, and full access',
+        value: 'yes-full-access-keep-context'
+      });
+    }
+  } else if (!feature('TRANSCRIPT_CLASSIFIER') || !isAutoModeAvailable) {
     options.push({
       label: 'Yes, auto-accept edits',
       value: 'yes-accept-edits-keep-context'

@@ -28,6 +28,7 @@ import { PermissionExplainerContent, usePermissionExplainerUI } from '../Permiss
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
 import { SedEditPermissionRequest } from '../SedEditPermissionRequest/SedEditPermissionRequest.js';
+import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js';
 import { useShellPermissionFeedback } from '../useShellPermissionFeedback.js';
 import { logUnaryPermissionEvent } from '../utils.js';
 import { bashToolUseOptions } from './bashToolUseOptions.js';
@@ -174,6 +175,10 @@ function BashPermissionRequestInner({
     explainerVisible: explainerState.visible
   });
   const [showPermissionDebug, setShowPermissionDebug] = useState(false);
+  const {
+    confirmDangerousMode,
+    dangerousModeDialog
+  } = useDangerousModeConfirmation();
   const [classifierDescription, setClassifierDescription] = useState(description || '');
   // Track whether the initial description (from prop or async generation) was empty.
   // Once we receive a non-empty description, this stays false.
@@ -297,9 +302,10 @@ function BashPermissionRequestInner({
     existingAllowDescriptions,
     yesInputMode,
     noInputMode,
+    isDangerousModeAvailable: toolPermissionContext.isBypassPermissionsModeAvailable,
     editablePrefix,
     onEditablePrefixChange
-  }), [toolUseConfirm, classifierDescription, initialClassifierDescriptionEmpty, existingAllowDescriptions, yesInputMode, noInputMode, editablePrefix, onEditablePrefixChange]);
+  }), [toolUseConfirm, classifierDescription, initialClassifierDescriptionEmpty, existingAllowDescriptions, yesInputMode, noInputMode, toolPermissionContext.isBypassPermissionsModeAvailable, editablePrefix, onEditablePrefixChange]);
 
   // Toggle permission debug info with keybinding
   const handleToggleDebug = useCallback(() => {
@@ -323,6 +329,7 @@ function BashPermissionRequestInner({
       yes: 1,
       'yes-apply-suggestions': 2,
       'yes-prefix-edited': 2,
+      'yes-full-access': 3,
       no: 3
     };
     if (feature('BASH_CLASSIFIER')) {
@@ -331,7 +338,8 @@ function BashPermissionRequestInner({
         'yes-apply-suggestions': 2,
         'yes-prefix-edited': 2,
         'yes-classifier-reviewed': 3,
-        no: 4
+        'yes-full-access': 4,
+        no: 5
       };
     }
     logEvent('tengu_permission_request_option_selected', {
@@ -379,6 +387,18 @@ function BashPermissionRequestInner({
       onDone();
       return;
     }
+    if (value_0 === 'yes-full-access') {
+      logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept');
+      confirmDangerousMode('fullAccess', () => {
+        toolUseConfirm.onAllow(toolUseConfirm.input, [{
+          type: 'setMode',
+          mode: 'fullAccess',
+          destination: 'session'
+        }]);
+        onDone();
+      });
+      return;
+    }
     switch (value_0) {
       case 'yes':
         {
@@ -423,6 +443,9 @@ function BashPermissionRequestInner({
           break;
         }
     }
+  }
+  if (dangerousModeDialog) {
+    return dangerousModeDialog;
   }
   const classifierSubtitle = feature('BASH_CLASSIFIER') ? toolUseConfirm.classifierAutoApproved ? <Text>
         <Text color="success">{figures.tick} Auto-approved</Text>

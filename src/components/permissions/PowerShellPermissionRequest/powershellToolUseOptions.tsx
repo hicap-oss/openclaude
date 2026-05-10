@@ -3,13 +3,14 @@ import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpda
 import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js';
 import type { OptionWithDescription } from '../../CustomSelect/select.js';
 import { generateShellSuggestionsLabel } from '../shellPermissionHelpers.js';
-export type PowerShellToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'no';
+export type PowerShellToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'yes-full-access' | 'no';
 export function powershellToolUseOptions({
   suggestions = [],
   onRejectFeedbackChange,
   onAcceptFeedbackChange,
   yesInputMode = false,
   noInputMode = false,
+  isDangerousModeAvailable = false,
   editablePrefix,
   onEditablePrefixChange
 }: {
@@ -18,6 +19,7 @@ export function powershellToolUseOptions({
   onAcceptFeedbackChange: (value: string) => void;
   yesInputMode?: boolean;
   noInputMode?: boolean;
+  isDangerousModeAvailable?: boolean;
   editablePrefix?: string;
   onEditablePrefixChange?: (value: string) => void;
 }): OptionWithDescription<PowerShellToolUseOption>[] {
@@ -69,6 +71,14 @@ export function powershellToolUseOptions({
           value: 'yes-apply-suggestions'
         });
       }
+    }
+    const hasPersistentAllowOption = options.some(o => o.value !== 'yes');
+    if (hasPersistentAllowOption && isDangerousModeAvailable) {
+      options.push({
+        label: 'Yes, and enable Full Access for this session',
+        color: 'error',
+        value: 'yes-full-access'
+      });
     }
   }
   if (noInputMode) {

@@ -49,12 +49,33 @@ describe('buildPlanApprovalOptions', () => {
 
     expect(options[0]).toMatchObject({
       label: 'Yes, clear context (42% used) and full access',
-      value: 'yes-bypass-permissions',
+      value: 'yes-full-access',
     })
     expect(options[1]).toMatchObject({
       label: 'Yes, and full access',
-      value: 'yes-accept-edits-keep-context',
+      value: 'yes-full-access-keep-context',
     })
+  })
+
+  test('adds fullAccess as an additional dangerous plan exit when bypass is primary', () => {
+    const options = buildPlanApprovalOptions({
+      showClearContext: true,
+      showUltraplan: false,
+      usedPercent: 42,
+      isAutoModeAvailable: false,
+      dangerousPlanExitMode: 'bypassPermissions',
+      planAuthorName: 'OpenClaude',
+      onFeedbackChange: () => {},
+    })
+
+    expect(options.map(option => option.value)).toEqual([
+      'yes-bypass-permissions',
+      'yes-full-access',
+      'yes-bypass-permissions-keep-context',
+      'yes-full-access-keep-context',
+      'yes-default-keep-context',
+      'no',
+    ])
   })
 })
 

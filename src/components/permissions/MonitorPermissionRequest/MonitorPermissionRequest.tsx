@@ -1,4 +1,5 @@
 import React from 'react'
+import { useAppState } from 'src/state/AppState.js'
 import { getOriginalCwd } from '../../../bootstrap/state.js'
 import { Box, Text } from '../../../ink.js'
 import { sanitizeToolNameForAnalytics } from '../../../services/analytics/metadata.js'
@@ -14,7 +15,7 @@ import type { PermissionRequestProps } from '../PermissionRequest.js'
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js'
 import { logUnaryPermissionEvent } from '../utils.js'
 
-type OptionValue = 'yes' | 'yes-dont-ask-again' | 'no'
+type OptionValue = 'yes' | 'yes-dont-ask-again' | 'yes-full-access' | 'no'
 
 export function MonitorPermissionRequest({
   toolUseConfirm,
@@ -22,6 +23,9 @@ export function MonitorPermissionRequest({
   onReject,
   workerBadge,
 }: PermissionRequestProps) {
+  const isDangerousModeAvailable = useAppState(
+    s => s.toolPermissionContext.isBypassPermissionsModeAvailable,
+  )
   const { command, description } = toolUseConfirm.input as {
     command?: string
     description?: string
@@ -75,6 +79,26 @@ export function MonitorPermissionRequest({
             destination: 'localSettings',
           },
         ] : [])
+        onDone()
+        break
+      }
+      case 'yes-full-access': {
+        logUnaryPermissionEvent({
+          completion_type: 'tool_use_single',
+          event: 'accept',
+          metadata: {
+            language_name: 'none',
+            message_id: toolUseConfirm.assistantMessage.message.id,
+            platform: env.platform,
+          },
+        })
+        toolUseConfirm.onAllow(toolUseConfirm.input, [
+          {
+            type: 'setMode',
+            mode: 'fullAccess',
+            destination: 'session',
+          },
+        ])
         onDone()
         break
       }
@@ -133,6 +157,17 @@ export function MonitorPermissionRequest({
       ),
       value: 'yes-dont-ask-again',
     })
+    if (isDangerousModeAvailable) {
+      options.push({
+        label: (
+          <Text color="error">
+            Yes, and enable Full Access for this session
+          </Text>
+        ),
+        value: 'yes-full-access',
+        dangerousMode: 'fullAccess',
+      })
+    }
   }
 
   options.push({
