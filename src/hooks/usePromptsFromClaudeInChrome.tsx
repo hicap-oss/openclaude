@@ -25,8 +25,7 @@ const ClaudeInChromePromptNotificationSchema = lazySchema(() => z.object({
 }));
 
 export function getClaudeInChromePermissionMode(toolPermissionMode: PermissionMode): 'ask' | 'skip_all_permission_checks' {
-  return toolPermissionMode === 'bypassPermissions' ||
-      toolPermissionMode === 'fullAccess'
+  return toolPermissionMode === 'fullAccess'
     ? 'skip_all_permission_checks'
     : 'ask';
 }

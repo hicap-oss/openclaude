@@ -21,7 +21,7 @@ import type { PermissionBehavior, PermissionRule, PermissionRuleValue } from '..
 import { type DangerousPermissionMode } from '../../../utils/permissions/dangerousModePrompt.js';
 import { getStartupDangerousPermissionPromptState } from '../../../utils/permissions/dangerousModePromptRuntime.js';
 import { permissionRuleValueToString } from '../../../utils/permissions/permissionRuleParser.js';
-import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, isAutoModeGateEnabled, isBypassPermissionsModeDisabled, transitionPermissionMode } from '../../../utils/permissions/permissionSetup.js';
+import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, isBypassPermissionsModeDisabled, transitionPermissionMode } from '../../../utils/permissions/permissionSetup.js';
 import { deletePermissionRule, getAllowRules, getAskRules, getDenyRules, permissionRuleSourceDisplayString } from '../../../utils/permissions/permissions.js';
 import type { UnreachableRule } from '../../../utils/permissions/shadowedRuleDetection.js';
 import { jsonStringify } from '../../../utils/slowOperations.js';
@@ -805,7 +805,7 @@ export function PermissionRuleList(t0) {
   const handleRequestRemoveDirectory = t17;
   let t18;
   if ($[113] !== onExit || $[114] !== setAppState || $[115] !== toolPermissionContext) {
-    t18 = (mode_0: ManageablePermissionMode, options_0?: {
+    t18 = async (mode_0: ManageablePermissionMode, options_0?: {
       skipPrompt?: boolean;
     }) => {
       if (mode_0 === toolPermissionContext.mode) {
@@ -826,6 +826,15 @@ export function PermissionRuleList(t0) {
             setPendingDangerousMode(promptState.mode);
             return;
           }
+        }
+        const dangerousModeError = await getDangerousPermissionModeTransitionError({
+          mode: mode_0,
+          toolPermissionContext,
+          requireLocalConfirmation: false
+        });
+        if (dangerousModeError) {
+          setModeMessage(dangerousModeError);
+          return;
         }
       }
       if (feature('TRANSCRIPT_CLASSIFIER') && mode_0 === "auto" && !isAutoModeGateEnabled()) {
@@ -876,7 +885,7 @@ export function PermissionRuleList(t0) {
       }
       const acceptedMode = pendingDangerousMode;
       setPendingDangerousMode(null);
-      handleModeChange(acceptedMode, {
+      void handleModeChange(acceptedMode, {
         skipPrompt: true
       });
     };

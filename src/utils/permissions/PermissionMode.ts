@@ -135,6 +135,12 @@ export function isDefaultMode(mode: PermissionMode | undefined): boolean {
   return mode === 'default' || mode === undefined
 }
 
+export function isDangerousPermissionMode(
+  mode: PermissionMode | undefined,
+): mode is 'bypassPermissions' | 'fullAccess' {
+  return mode === 'bypassPermissions' || mode === 'fullAccess'
+}
+
 export function permissionModeShortTitle(mode: PermissionMode): string {
   return getModeConfig(mode).shortTitle
 }

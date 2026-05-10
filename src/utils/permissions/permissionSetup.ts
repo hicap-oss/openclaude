@@ -18,6 +18,7 @@ import { SETTING_SOURCES } from '../settings/constants.js'
 import {
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
+  getSettingsWithSources,
   getUseAutoModeDuringPlan,
   hasAllowBypassPermissionsMode,
   hasAutoModeOptIn,
@@ -28,6 +29,7 @@ import {
   permissionModeTitle,
 } from './PermissionMode.js'
 import { applyPermissionRulesToPermissionContext } from './permissions.js'
+import { getStartupDangerousPermissionPromptState } from './dangerousModePromptRuntime.js'
 import { loadAllPermissionRulesFromDisk } from './permissionsLoader.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -685,6 +687,47 @@ function isSymlinkTo({
     : false
 }
 
+function isDangerousDefaultPermissionMode(
+  mode: PermissionMode,
+): mode is 'bypassPermissions' | 'fullAccess' {
+  return mode === 'bypassPermissions' || mode === 'fullAccess'
+}
+
+export function getEffectiveDefaultPermissionModeFromSettingsSources(
+  sources: Array<{
+    source: SettingSource
+    settings: {
+      permissions?: {
+        defaultMode?: PermissionMode
+      }
+    }
+  }>,
+): PermissionMode | undefined {
+  let resolvedMode: PermissionMode | undefined
+
+  for (const { source, settings } of sources) {
+    const defaultMode = settings.permissions?.defaultMode
+    if (!defaultMode) {
+      continue
+    }
+
+    if (
+      source === 'projectSettings' &&
+      isDangerousDefaultPermissionMode(defaultMode)
+    ) {
+      logForDebugging(
+        `Ignoring project settings defaultMode "${defaultMode}" because dangerous default modes must come from a trusted source`,
+        { level: 'warn' },
+      )
+      continue
+    }
+
+    resolvedMode = defaultMode
+  }
+
+  return resolvedMode
+}
+
 /**
  * Safely convert CLI flags to a PermissionMode
  */
@@ -695,7 +738,12 @@ export function initialPermissionModeFromCLI({
   permissionModeCli: string | undefined
   dangerouslySkipPermissions: boolean | undefined
 }): { mode: PermissionMode; notification?: string } {
-  const settings = getSettings_DEPRECATED() || {}
+  const settingsWithSources = getSettingsWithSources()
+  const settings = settingsWithSources.effective || {}
+  const settingsDefaultMode =
+    getEffectiveDefaultPermissionModeFromSettingsSources(
+      settingsWithSources.sources,
+    )
 
   // Check GrowthBook gate first - highest precedence
   const growthBookDisableBypassPermissionsMode =
@@ -742,8 +790,8 @@ export function initialPermissionModeFromCLI({
       orderedModes.push(parsedMode)
     }
   }
-  if (settings.permissions?.defaultMode) {
-    const settingsMode = settings.permissions.defaultMode as PermissionMode
+  if (settingsDefaultMode) {
+    const settingsMode = settingsDefaultMode
     // CCR only supports acceptEdits and plan — ignore other defaultModes from
     // settings (e.g. bypassPermissions would otherwise silently grant full
     // access in a remote environment).
@@ -1389,6 +1437,60 @@ export function isBypassPermissionsModeDisabled(): boolean {
   )
 }
 
+type DangerousPermissionModeTransitionValidationDeps = {
+  getStartupDangerousPermissionPromptState: typeof getStartupDangerousPermissionPromptState
+  shouldDisableBypassPermissions: typeof shouldDisableBypassPermissions
+}
+
+const DEFAULT_DANGEROUS_PERMISSION_MODE_TRANSITION_VALIDATION_DEPS: DangerousPermissionModeTransitionValidationDeps =
+  {
+    getStartupDangerousPermissionPromptState,
+    shouldDisableBypassPermissions,
+  }
+
+export async function getDangerousPermissionModeTransitionError({
+  mode,
+  toolPermissionContext,
+  requireLocalConfirmation = true,
+  deps = DEFAULT_DANGEROUS_PERMISSION_MODE_TRANSITION_VALIDATION_DEPS,
+}: {
+  mode: PermissionMode
+  toolPermissionContext: Pick<
+    ToolPermissionContext,
+    'isBypassPermissionsModeAvailable'
+  >
+  requireLocalConfirmation?: boolean
+  deps?: DangerousPermissionModeTransitionValidationDeps
+}): Promise<string | undefined> {
+  if (mode !== 'bypassPermissions' && mode !== 'fullAccess') {
+    return undefined
+  }
+
+  if (isBypassPermissionsModeDisabled()) {
+    return `Cannot set permission mode to ${mode} because it is disabled by settings or configuration`
+  }
+
+  if (!toolPermissionContext.isBypassPermissionsModeAvailable) {
+    return `Cannot set permission mode to ${mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`
+  }
+
+  if (requireLocalConfirmation) {
+    const promptState = deps.getStartupDangerousPermissionPromptState({
+      permissionMode: mode,
+      allowDangerouslySkipPermissions: false,
+    })
+    if (promptState.shouldShow && promptState.mode) {
+      return `Cannot set permission mode to ${mode} until the user explicitly confirms ${permissionModeTitle(promptState.mode)} in a local interactive session`
+    }
+  }
+
+  if (await deps.shouldDisableBypassPermissions()) {
+    return `Cannot set permission mode to ${mode} because it is disabled by your organization policy`
+  }
+
+  return undefined
+}
+
 /**
  * Creates an updated context with bypassPermissions disabled
  */
@@ -1419,15 +1521,15 @@ export function createDisabledBypassPermissionsContext(
  */
 export async function checkAndDisableBypassPermissions(
   currentContext: ToolPermissionContext,
-): Promise<void> {
+): Promise<boolean> {
   // Only proceed if bypassPermissions mode is available
   if (!currentContext.isBypassPermissionsModeAvailable) {
-    return
+    return false
   }
 
   const shouldDisable = await shouldDisableBypassPermissions()
   if (!shouldDisable) {
-    return
+    return false
   }
 
   // Gate is enabled, need to disable bypassPermissions mode
@@ -1437,12 +1539,17 @@ export async function checkAndDisableBypassPermissions(
   )
 
   void gracefulShutdown(1, 'bypass_permissions_disabled')
+  return true
 }
 
 export function isDefaultPermissionModeAuto(): boolean {
   if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const settings = getSettings_DEPRECATED() || {}
-    return settings.permissions?.defaultMode === 'auto'
+    const settingsWithSources = getSettingsWithSources()
+    return (
+      getEffectiveDefaultPermissionModeFromSettingsSources(
+        settingsWithSources.sources,
+      ) === 'auto'
+    )
   }
   return false
 }

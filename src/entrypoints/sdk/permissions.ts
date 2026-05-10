@@ -174,9 +174,33 @@ export interface PermissionContextOptions {
   disallowedTools?: string[]
 }
 
+function isDangerousPermissionMode(
+  mode: QueryPermissionMode | undefined,
+): mode is
+  | 'bypass-permissions'
+  | 'bypassPermissions'
+  | 'full-access'
+  | 'fullAccess' {
+  return (
+    mode === 'bypass-permissions' ||
+    mode === 'bypassPermissions' ||
+    mode === 'full-access' ||
+    mode === 'fullAccess'
+  )
+}
+
 export function buildPermissionContext(options: PermissionContextOptions): ToolPermissionContext {
   const base: ToolPermissionContext = getEmptyToolPermissionContext()
   const mode = options.permissionMode ?? 'default'
+
+  if (
+    isDangerousPermissionMode(mode) &&
+    options.allowDangerouslySkipPermissions !== true
+  ) {
+    throw new Error(
+      `SDK permissionMode "${mode}" requires allowDangerouslySkipPermissions: true`,
+    )
+  }
 
   // Map SDK permission mode to internal PermissionMode
   let internalMode: string = 'default'
@@ -212,10 +236,6 @@ export function buildPermissionContext(options: PermissionContextOptions): ToolP
     ...base,
     mode: internalMode as ToolPermissionContext['mode'],
     isBypassPermissionsModeAvailable:
-      mode === 'bypass-permissions' ||
-      mode === 'bypassPermissions' ||
-      mode === 'full-access' ||
-      mode === 'fullAccess' ||
       options.allowDangerouslySkipPermissions === true,
     alwaysDenyRules: {
       ...base.alwaysDenyRules,

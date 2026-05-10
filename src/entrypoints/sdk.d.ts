@@ -357,6 +357,7 @@ export type SDKSessionOptions = {
   cwd: string
   model?: string
   permissionMode?: QueryPermissionMode
+  allowDangerouslySkipPermissions?: boolean
   abortController?: AbortController
   /**
    * Callback invoked before each tool use. Return `{ behavior: 'allow' }` to

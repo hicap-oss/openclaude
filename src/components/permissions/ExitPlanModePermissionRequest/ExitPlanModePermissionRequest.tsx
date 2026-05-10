@@ -27,7 +27,7 @@ import { getMainLoopModel, getRuntimeMainLoopModel, modelDisplayString } from '.
 import { createPromptRuleContent, isClassifierPermissionsEnabled, PROMPT_PREFIX } from '../../../utils/permissions/bashClassifier.js';
 import { type PermissionMode, toExternalPermissionMode } from '../../../utils/permissions/PermissionMode.js';
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js';
-import { isAutoModeGateEnabled, restoreDangerousPermissions, stripDangerousPermissionsForAutoMode } from '../../../utils/permissions/permissionSetup.js';
+import { getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, restoreDangerousPermissions, stripDangerousPermissionsForAutoMode } from '../../../utils/permissions/permissionSetup.js';
 import { getPewterLedgerVariant, isPlanModeInterviewPhaseEnabled } from '../../../utils/planModeV2.js';
 import { getPlan, getPlanFilePath } from '../../../utils/plans.js';
 import { editFileInEditor, editPromptInEditor } from '../../../utils/promptEditor.js';
@@ -355,6 +355,23 @@ export function ExitPlanModePermissionRequest({
     const updatedInput = isV2 && !planEditedLocally ? {} : {
       plan: currentPlan
     };
+    const dangerousMode = dangerousModeForResponse(value);
+    if (dangerousMode) {
+      const dangerousModeError = await getDangerousPermissionModeTransitionError({
+        mode: dangerousMode,
+        toolPermissionContext,
+        requireLocalConfirmation: false
+      });
+      if (dangerousModeError) {
+        addNotification({
+          key: `exit-plan-mode-${dangerousMode}`,
+          text: dangerousModeError,
+          color: 'warning',
+          priority: 'high'
+        });
+        return;
+      }
+    }
 
     // If auto was active during plan (from auto mode or opt-in) and NOT going
     // to auto, deactivate auto + restore permissions + fire exit attachment.

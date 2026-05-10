@@ -174,12 +174,13 @@ import {
   getFastModeState,
 } from 'src/utils/fastMode.js'
 import {
+  getDangerousPermissionModeTransitionError,
   isAutoModeGateEnabled,
   getAutoModeUnavailableNotification,
   getAutoModeUnavailableReason,
-  isBypassPermissionsModeDisabled,
   transitionPermissionMode,
 } from 'src/utils/permissions/permissionSetup.js'
+import { permissionModeFromString } from 'src/utils/permissions/PermissionMode.js'
 import {
   tryGenerateSuggestion,
   logSuggestionOutcome,
@@ -678,6 +679,7 @@ export async function runHeadless(
     turnInterruptionState,
     agentSetting: resumedAgentSetting,
   } = await loadInitialMessages(setAppState, {
+    getAppState,
     continue: options.continue,
     teleport: options.teleport,
     resume: options.resume,
@@ -2908,14 +2910,15 @@ function runHeadlessStreaming(
           }
         } else if (message.request.subtype === 'set_permission_mode') {
           const m = message.request // for typescript (TODO: use readonly types to avoid this)
+          const nextToolPermissionContext = await handleSetPermissionMode(
+            m,
+            message.request_id,
+            getAppState().toolPermissionContext,
+            output,
+          )
           setAppState(prev => ({
             ...prev,
-            toolPermissionContext: handleSetPermissionMode(
-              m,
-              message.request_id,
-              prev.toolPermissionContext,
-              output,
-            ),
+            toolPermissionContext: nextToolPermissionContext,
             isUltraplanMode: m.ultraplan ?? prev.isUltraplanMode,
           }))
           // handleSetPermissionMode sends the control_response; the
@@ -4565,34 +4568,25 @@ async function handleRewindFiles(
   return { canRewind: true }
 }
 
-function handleSetPermissionMode(
+async function handleSetPermissionMode(
   request: { mode: InternalPermissionMode },
   requestId: string,
   toolPermissionContext: ToolPermissionContext,
   output: Stream<StdoutMessage>,
-): ToolPermissionContext {
+): Promise<ToolPermissionContext> {
   // Check if trying to switch to a dangerous permission mode
   if (request.mode === 'bypassPermissions' || request.mode === 'fullAccess') {
-    if (isBypassPermissionsModeDisabled()) {
+    const dangerousModeError = await getDangerousPermissionModeTransitionError({
+      mode: request.mode,
+      toolPermissionContext,
+    })
+    if (dangerousModeError) {
       output.enqueue({
         type: 'control_response',
         response: {
           subtype: 'error',
           request_id: requestId,
-          error:
-            `Cannot set permission mode to ${request.mode} because it is disabled by settings or configuration`,
-        },
-      })
-      return toolPermissionContext
-    }
-    if (!toolPermissionContext.isBypassPermissionsModeAvailable) {
-      output.enqueue({
-        type: 'control_response',
-        response: {
-          subtype: 'error',
-          request_id: requestId,
-          error:
-            `Cannot set permission mode to ${request.mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`,
+          error: dangerousModeError,
         },
       })
       return toolPermissionContext
@@ -4638,6 +4632,38 @@ function handleSetPermissionMode(
       toolPermissionContext,
     ),
     mode: request.mode,
+  }
+}
+
+async function sanitizeResumedExternalMetadata(
+  metadata: SessionExternalMetadata,
+  toolPermissionContext: ToolPermissionContext,
+): Promise<SessionExternalMetadata> {
+  if (typeof metadata.permission_mode !== 'string') {
+    return metadata
+  }
+
+  const resumedMode = permissionModeFromString(metadata.permission_mode)
+  if (resumedMode !== 'bypassPermissions' && resumedMode !== 'fullAccess') {
+    return metadata
+  }
+
+  const dangerousModeError = await getDangerousPermissionModeTransitionError({
+    mode: resumedMode,
+    toolPermissionContext,
+  })
+  if (!dangerousModeError) {
+    return metadata
+  }
+
+  logForDebugging(
+    `Discarding resumed dangerous permission mode ${resumedMode}: ${dangerousModeError}`,
+    { level: 'warn' },
+  )
+  notifySessionMetadataChanged({ permission_mode: 'default' })
+  return {
+    ...metadata,
+    permission_mode: 'default',
   }
 }
 
@@ -4893,6 +4919,7 @@ type LoadInitialMessagesResult = {
 async function loadInitialMessages(
   setAppState: (f: (prev: AppState) => AppState) => void,
   options: {
+    getAppState: () => AppState
     continue: boolean | undefined
     teleport: string | true | null | undefined
     resume: string | boolean | undefined
@@ -5054,7 +5081,11 @@ async function loadInitialMessages(
           options.restoredWorkerState,
         ])
         if (metadata) {
-          setAppState(externalMetadataToAppState(metadata))
+          const sanitizedMetadata = await sanitizeResumedExternalMetadata(
+            metadata,
+            options.getAppState().toolPermissionContext,
+          )
+          setAppState(externalMetadataToAppState(sanitizedMetadata))
           if (typeof metadata.model === 'string') {
             setMainLoopModelOverride(metadata.model)
           }

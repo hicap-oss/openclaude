@@ -32,10 +32,12 @@ import {
 } from '../../utils/messages.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import {
+  applyPermissionUpdate,
   applyPermissionUpdates,
   persistPermissionUpdates,
   supportsPersistence,
 } from '../../utils/permissions/PermissionUpdate.js'
+import { getDangerousPermissionModeTransitionError } from '../../utils/permissions/permissionSetup.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import {
   logPermissionDecision,
@@ -138,12 +140,42 @@ function createPermissionContext(
     },
     async persistPermissions(updates: PermissionUpdate[]) {
       if (updates.length === 0) return false
-      persistPermissionUpdates(updates)
       const appState = toolUseContext.getAppState()
+      const validatedUpdates: PermissionUpdate[] = []
+      let nextContextForValidation = appState.toolPermissionContext
+      for (const update of updates) {
+        if (
+          update.type === 'setMode' &&
+          (update.mode === 'bypassPermissions' || update.mode === 'fullAccess')
+        ) {
+          const dangerousModeError =
+            await getDangerousPermissionModeTransitionError({
+              mode: update.mode,
+              toolPermissionContext: nextContextForValidation,
+              requireLocalConfirmation: false,
+            })
+          if (dangerousModeError) {
+            logForDebugging(
+              `Skipping dangerous permission update for ${update.mode}: ${dangerousModeError}`,
+              { level: 'warn' },
+            )
+            continue
+          }
+        }
+        validatedUpdates.push(update)
+        nextContextForValidation = applyPermissionUpdate(
+          nextContextForValidation,
+          update,
+        )
+      }
+      if (validatedUpdates.length === 0) return false
+      persistPermissionUpdates(validatedUpdates)
       setToolPermissionContext(
-        applyPermissionUpdates(appState.toolPermissionContext, updates),
+        applyPermissionUpdates(appState.toolPermissionContext, validatedUpdates),
       )
-      return updates.some(update => supportsPersistence(update.destination))
+      return validatedUpdates.some(update =>
+        supportsPersistence(update.destination),
+      )
     },
     resolveIfAborted(resolve: (decision: PermissionDecision) => void) {
       if (!toolUseContext.abortController.signal.aborted) return false

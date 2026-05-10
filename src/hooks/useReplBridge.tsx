@@ -22,7 +22,7 @@ import { errorMessage } from '../utils/errors.js';
 import { enqueue } from '../utils/messageQueueManager.js';
 import { buildSystemInitMessage } from '../utils/messages/systemInit.js';
 import { createBridgeStatusMessage, createSystemMessage } from '../utils/messages.js';
-import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, isAutoModeGateEnabled, isBypassPermissionsModeDisabled, transitionPermissionMode } from '../utils/permissions/permissionSetup.js';
+import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, transitionPermissionMode } from '../utils/permissions/permissionSetup.js';
 import { getLeaderToolUseConfirmQueue } from '../utils/swarm/leaderPermissionBridge.js';
 
 /** How long after a failure before replBridgeEnabled is auto-cleared (stops retries). */
@@ -413,7 +413,7 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
                 };
               });
             },
-            onSetPermissionMode(mode) {
+            async onSetPermissionMode(mode) {
               // Policy guards MUST fire before transitionPermissionMode —
               // its internal auto-gate check is a defensive throw (with a
               // setAutoModeActive(true) side-effect BEFORE the throw) rather
@@ -425,16 +425,14 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               // can't import the checks directly (bootstrap-isolation), so
               // it relies on this verdict to emit the error response.
               if (mode === 'bypassPermissions' || mode === 'fullAccess') {
-                if (isBypassPermissionsModeDisabled()) {
+                const dangerousModeError = await getDangerousPermissionModeTransitionError({
+                  mode,
+                  toolPermissionContext: store.getState().toolPermissionContext
+                });
+                if (dangerousModeError) {
                   return {
                     ok: false,
-                    error: `Cannot set permission mode to ${mode} because it is disabled by settings or configuration`
-                  };
-                }
-                if (!store.getState().toolPermissionContext.isBypassPermissionsModeAvailable) {
-                  return {
-                    ok: false,
-                    error: `Cannot set permission mode to ${mode}. Enable it with --allow-dangerously-skip-permissions or set permissions.allowBypassPermissionsMode in settings.json`
+                    error: dangerousModeError
                   };
                 }
               }

@@ -22,6 +22,10 @@ import {
 } from '../utils/inProcessTeammateHelpers.js'
 import { createAssistantMessage } from '../utils/messages.js'
 import {
+  getDangerousPermissionModeTransitionError,
+  transitionPermissionMode,
+} from '../utils/permissions/permissionSetup.js'
+import {
   permissionModeFromString,
   toExternalPermissionMode,
 } from '../utils/permissions/PermissionMode.js'
@@ -166,19 +170,37 @@ export function useInboxPoller({
           if (approvalResponse.approved) {
             // Use leader's permission mode if provided, otherwise default
             const targetMode = approvalResponse.permissionMode ?? 'default'
+            if (targetMode === 'bypassPermissions' || targetMode === 'fullAccess') {
+              const dangerousModeError =
+                await getDangerousPermissionModeTransitionError({
+                  mode: targetMode,
+                  toolPermissionContext:
+                    store.getState().toolPermissionContext,
+                  requireLocalConfirmation: false,
+                })
+              if (dangerousModeError) {
+                logForDebugging(
+                  `[InboxPoller] Rejecting plan-approval mode change from team-lead: ${dangerousModeError}`,
+                )
+                continue
+              }
+            }
 
             // Transition out of plan mode
-            setAppState(prev => ({
-              ...prev,
-              toolPermissionContext: applyPermissionUpdate(
+            setAppState(prev => {
+              const nextContext = transitionPermissionMode(
+                prev.toolPermissionContext.mode,
+                targetMode,
                 prev.toolPermissionContext,
-                {
-                  type: 'setMode',
-                  mode: toExternalPermissionMode(targetMode),
-                  destination: 'session',
+              )
+              return {
+                ...prev,
+                toolPermissionContext: {
+                  ...nextContext,
+                  mode: targetMode,
                 },
-              ),
-            }))
+              }
+            })
             logForDebugging(
               `[InboxPoller] Plan approved by team lead, exited plan mode to ${targetMode}`,
             )
@@ -570,22 +592,40 @@ export function useInboxPoller({
         }
 
         const targetMode = permissionModeFromString(parsed.mode)
+        if (targetMode === 'bypassPermissions' || targetMode === 'fullAccess') {
+          const dangerousModeError =
+            await getDangerousPermissionModeTransitionError({
+              mode: targetMode,
+              toolPermissionContext:
+                store.getState().toolPermissionContext,
+              requireLocalConfirmation: false,
+            })
+          if (dangerousModeError) {
+            logForDebugging(
+              `[InboxPoller] Rejecting mode change from team-lead: ${dangerousModeError}`,
+            )
+            continue
+          }
+        }
         logForDebugging(
           `[InboxPoller] Applying mode change from team-lead: ${targetMode}`,
         )
 
         // Update local permission context
-        setAppState(prev => ({
-          ...prev,
-          toolPermissionContext: applyPermissionUpdate(
+        setAppState(prev => {
+          const nextContext = transitionPermissionMode(
+            prev.toolPermissionContext.mode,
+            targetMode,
             prev.toolPermissionContext,
-            {
-              type: 'setMode',
-              mode: toExternalPermissionMode(targetMode),
-              destination: 'session',
+          )
+          return {
+            ...prev,
+            toolPermissionContext: {
+              ...nextContext,
+              mode: targetMode,
             },
-          ),
-        }))
+          }
+        })
 
         // Update config.json so team lead can see the new mode
         const teamName = currentAppState.teamContext?.teamName

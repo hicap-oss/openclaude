@@ -2,7 +2,6 @@ import React from 'react'
 import { logEvent } from 'src/services/analytics/index.js'
 import { Box, Link, Newline, Text } from '../ink.js'
 import { gracefulShutdownSync } from '../utils/gracefulShutdown.js'
-import { persistDangerousModeAcceptance } from '../utils/permissions/dangerousModePromptRuntime.js'
 import {
   type PermissionMode,
   permissionModeTitle,
@@ -47,7 +46,6 @@ export function BypassPermissionsModeDialog({
     (value: 'accept' | 'decline') => {
       if (value === 'accept') {
         logEvent('tengu_bypass_permissions_mode_dialog_accept', {})
-        persistDangerousModeAcceptance(mode)
         onAccept()
         return
       }

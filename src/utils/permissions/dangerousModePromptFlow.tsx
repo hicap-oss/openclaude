@@ -2,7 +2,10 @@ import React from 'react'
 import type { Root } from '../../ink.js'
 import { BypassPermissionsModeDialog } from '../../components/BypassPermissionsModeDialog.js'
 import type { PermissionMode } from './PermissionMode.js'
-import { getStartupDangerousPermissionPromptState } from './dangerousModePromptRuntime.js'
+import {
+  getStartupDangerousPermissionPromptState,
+  persistDangerousModeAcceptance,
+} from './dangerousModePromptRuntime.js'
 
 export async function showDangerousModePromptIfNeeded(
   root: Root,
@@ -25,7 +28,10 @@ export async function showDangerousModePromptIfNeeded(
   await showSetupDialog(root, done => (
     <BypassPermissionsModeDialog
       mode={dangerousPromptState.mode}
-      onAccept={done}
+      onAccept={() => {
+        persistDangerousModeAcceptance(dangerousPromptState.mode!)
+        done()
+      }}
     />
   ))
   return true

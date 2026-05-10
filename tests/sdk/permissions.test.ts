@@ -76,27 +76,63 @@ describe('buildPermissionContext', () => {
   })
 
   test('maps bypass-permissions mode', () => {
-    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'bypass-permissions' })
+    const ctx = buildPermissionContext({
+      cwd: '/tmp',
+      permissionMode: 'bypass-permissions',
+      allowDangerouslySkipPermissions: true,
+    })
     expect(ctx.mode).toBe('bypassPermissions')
     expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
   })
 
   test('maps bypassPermissions mode', () => {
-    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'bypassPermissions' })
+    const ctx = buildPermissionContext({
+      cwd: '/tmp',
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+    })
     expect(ctx.mode).toBe('bypassPermissions')
     expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
   })
 
   test('maps fullAccess mode', () => {
-    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'fullAccess' })
+    const ctx = buildPermissionContext({
+      cwd: '/tmp',
+      permissionMode: 'fullAccess',
+      allowDangerouslySkipPermissions: true,
+    })
     expect(ctx.mode).toBe('fullAccess')
     expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
   })
 
   test('maps full-access mode', () => {
-    const ctx = buildPermissionContext({ cwd: '/tmp', permissionMode: 'full-access' })
+    const ctx = buildPermissionContext({
+      cwd: '/tmp',
+      permissionMode: 'full-access',
+      allowDangerouslySkipPermissions: true,
+    })
     expect(ctx.mode).toBe('fullAccess')
     expect(ctx.isBypassPermissionsModeAvailable).toBe(true)
+  })
+
+  test('rejects dangerous modes without allowDangerouslySkipPermissions', () => {
+    expect(() =>
+      buildPermissionContext({
+        cwd: '/tmp',
+        permissionMode: 'bypassPermissions',
+      }),
+    ).toThrow(
+      'SDK permissionMode "bypassPermissions" requires allowDangerouslySkipPermissions: true',
+    )
+
+    expect(() =>
+      buildPermissionContext({
+        cwd: '/tmp',
+        permissionMode: 'fullAccess',
+      }),
+    ).toThrow(
+      'SDK permissionMode "fullAccess" requires allowDangerouslySkipPermissions: true',
+    )
   })
 
   test('default mode does not have bypass available', () => {
