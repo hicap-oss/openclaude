@@ -177,6 +177,7 @@ import {
   applyPermissionModeChange,
   getPermissionModeChangeRequestDecision,
 } from 'src/utils/permissions/permissionSetup.js'
+import { requestPermissionModeChange } from 'src/utils/permissions/permissionModeChange.js'
 import { permissionModeFromString } from 'src/utils/permissions/PermissionMode.js'
 import {
   tryGenerateSuggestion,
@@ -4571,17 +4572,31 @@ async function handleSetPermissionMode(
   toolPermissionContext: ToolPermissionContext,
   output: Stream<StdoutMessage>,
 ): Promise<ToolPermissionContext> {
-  const modeDecision = await getPermissionModeChangeRequestDecision({
+  let nextToolPermissionContext = toolPermissionContext
+  let blockedError: string | undefined
+
+  const result = await requestPermissionModeChange({
     mode: request.mode,
     toolPermissionContext,
+    allowDangerousModeConfirmation: false,
+    onApply: () => {
+      nextToolPermissionContext = applyPermissionModeChange(
+        toolPermissionContext,
+        request.mode,
+      )
+    },
+    onBlocked: error => {
+      blockedError = error
+    },
   })
-  if (modeDecision.status === 'blocked') {
+
+  if (result.status !== 'applied') {
     output.enqueue({
       type: 'control_response',
       response: {
         subtype: 'error',
         request_id: requestId,
-        error: modeDecision.error,
+        error: blockedError ?? `Cannot set permission mode to ${request.mode}`,
       },
     })
     return toolPermissionContext
@@ -4599,7 +4614,7 @@ async function handleSetPermissionMode(
     },
   })
 
-  return applyPermissionModeChange(toolPermissionContext, request.mode)
+  return nextToolPermissionContext
 }
 
 async function sanitizeResumedExternalMetadata(

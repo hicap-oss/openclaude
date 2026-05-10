@@ -22,7 +22,8 @@ import { errorMessage } from '../utils/errors.js';
 import { enqueue } from '../utils/messageQueueManager.js';
 import { buildSystemInitMessage } from '../utils/messages/systemInit.js';
 import { createBridgeStatusMessage, createSystemMessage } from '../utils/messages.js';
-import { applyPermissionModeChange, getPermissionModeChangeRequestDecision } from '../utils/permissions/permissionSetup.js';
+import { requestPermissionModeChange } from '../utils/permissions/permissionModeChange.js';
+import { applyPermissionModeChange } from '../utils/permissions/permissionSetup.js';
 import { getLeaderToolUseConfirmQueue } from '../utils/swarm/leaderPermissionBridge.js';
 
 /** How long after a failure before replBridgeEnabled is auto-cleared (stops retries). */
@@ -424,26 +425,33 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               // These mirror print.ts handleSetPermissionMode; the bridge
               // can't import the checks directly (bootstrap-isolation), so
               // it relies on this verdict to emit the error response.
-              const modeDecision = await getPermissionModeChangeRequestDecision({
+              let blockedError: string | undefined;
+              const result = await requestPermissionModeChange({
                 mode,
-                toolPermissionContext: store.getState().toolPermissionContext
+                toolPermissionContext: store.getState().toolPermissionContext,
+                allowDangerousModeConfirmation: false,
+                onApply: () => {
+                  setAppState(prev_12 => {
+                    const current = prev_12.toolPermissionContext.mode;
+                    if (current === mode) return prev_12;
+                    return {
+                      ...prev_12,
+                      toolPermissionContext: applyPermissionModeChange(prev_12.toolPermissionContext, mode)
+                    };
+                  });
+                },
+                onBlocked: error => {
+                  blockedError = error;
+                }
               });
-              if (modeDecision.status === 'blocked') {
+              if (result.status !== 'applied') {
                 return {
                   ok: false,
-                  error: modeDecision.error
+                  error: blockedError ?? `Cannot set permission mode to ${mode}`
                 };
               }
               // Guards passed — apply via the centralized transition so
               // prePlanMode stashing and auto-mode state sync all fire.
-              setAppState(prev_12 => {
-                const current = prev_12.toolPermissionContext.mode;
-                if (current === mode) return prev_12;
-                return {
-                  ...prev_12,
-                  toolPermissionContext: applyPermissionModeChange(prev_12.toolPermissionContext, mode)
-                };
-              });
               // Recheck queued permission prompts now that mode changed.
               setImmediate(() => {
                 getLeaderToolUseConfirmQueue()?.(currentQueue => {

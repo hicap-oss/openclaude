@@ -2,19 +2,16 @@ import React, { useMemo } from 'react'
 import { useAppState } from 'src/state/AppState.js'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { Box, Text, useTheme } from '../../ink.js'
-import { sanitizeToolNameForAnalytics } from '../../services/analytics/metadata.js'
-import { env } from '../../utils/env.js'
 import { shouldShowAlwaysAllowOptions } from '../../utils/permissions/permissionsLoader.js'
 import { truncateToLines } from '../../utils/stringUtils.js'
-import { logUnaryEvent } from '../../utils/unaryLogging.js'
-import { usePermissionRequestLogging } from './hooks.js'
-import { PermissionDialog } from './PermissionDialog.js'
+import type { PermissionRequestProps } from './PermissionRequest.js'
 import {
   PermissionPrompt,
   type PermissionPromptOption,
 } from './PermissionPrompt.js'
-import type { PermissionRequestProps } from './PermissionRequest.js'
-import { PermissionRuleExplanation } from './PermissionRuleExplanation.js'
+import {
+  createSimplePermissionHandlers,
+} from './simplePermissionActions.js'
 
 type FallbackOptionValue =
   | 'yes'
@@ -40,99 +37,41 @@ export function FallbackPermissionRequest({
     ? originalUserFacingName.slice(0, -6)
     : originalUserFacingName
 
-  usePermissionRequestLogging(toolUseConfirm, {
-    completion_type: 'tool_use_single',
-    language_name: 'none',
-  })
-
-  const handleSelect = (value: FallbackOptionValue, feedback?: string) => {
-    switch (value) {
-      case 'yes':
-        logUnaryEvent({
-          completion_type: 'tool_use_single',
-          event: 'accept',
-          metadata: {
-            language_name: 'none',
-            message_id: toolUseConfirm.assistantMessage.message.id,
-            platform: env.platform,
-          },
-        })
-        toolUseConfirm.onAllow(toolUseConfirm.input, [], feedback)
-        onDone()
-        return
-
-      case 'yes-dont-ask-again':
-        logUnaryEvent({
-          completion_type: 'tool_use_single',
-          event: 'accept',
-          metadata: {
-            language_name: 'none',
-            message_id: toolUseConfirm.assistantMessage.message.id,
-            platform: env.platform,
-          },
-        })
-        toolUseConfirm.onAllow(toolUseConfirm.input, [
+  const { onSelect, onCancel } = createSimplePermissionHandlers(
+    toolUseConfirm,
+    { onDone, onReject },
+    {
+      yes: {
+        behavior: 'allow',
+        includeFeedback: true,
+      },
+      'yes-dont-ask-again': {
+        behavior: 'allow',
+        updates: [
           {
             type: 'addRules',
             rules: [{ toolName: toolUseConfirm.tool.name }],
             behavior: 'allow',
             destination: 'localSettings',
           },
-        ])
-        onDone()
-        return
-
-      case 'yes-full-access':
-        logUnaryEvent({
-          completion_type: 'tool_use_single',
-          event: 'accept',
-          metadata: {
-            language_name: 'none',
-            message_id: toolUseConfirm.assistantMessage.message.id,
-            platform: env.platform,
-          },
-        })
-        toolUseConfirm.onAllow(toolUseConfirm.input, [
+        ],
+      },
+      'yes-full-access': {
+        behavior: 'allow',
+        updates: [
           {
             type: 'setMode',
             mode: 'fullAccess',
             destination: 'session',
           },
-        ])
-        onDone()
-        return
-
-      case 'no':
-        logUnaryEvent({
-          completion_type: 'tool_use_single',
-          event: 'reject',
-          metadata: {
-            language_name: 'none',
-            message_id: toolUseConfirm.assistantMessage.message.id,
-            platform: env.platform,
-          },
-        })
-        toolUseConfirm.onReject(feedback)
-        onReject()
-        onDone()
-        return
-    }
-  }
-
-  const handleCancel = () => {
-    logUnaryEvent({
-      completion_type: 'tool_use_single',
-      event: 'reject',
-      metadata: {
-        language_name: 'none',
-        message_id: toolUseConfirm.assistantMessage.message.id,
-        platform: env.platform,
+        ],
       },
-    })
-    toolUseConfirm.onReject()
-    onReject()
-    onDone()
-  }
+      no: {
+        behavior: 'reject',
+        includeFeedback: true,
+      },
+    },
+  )
 
   const options = useMemo(() => {
     const nextOptions: PermissionPromptOption<FallbackOptionValue>[] = [
@@ -177,11 +116,6 @@ export function FallbackPermissionRequest({
     return nextOptions
   }, [isDangerousModeAvailable, userFacingName])
 
-  const toolAnalyticsContext = {
-    toolName: sanitizeToolNameForAnalytics(toolUseConfirm.tool.name),
-    isMcp: toolUseConfirm.tool.isMcp ?? false,
-  }
-
   const toolMessage = toolUseConfirm.tool.renderToolUseMessage(
     toolUseConfirm.input as never,
     {
@@ -197,26 +131,22 @@ export function FallbackPermissionRequest({
   )
 
   return (
-    <PermissionDialog title="Tool use" workerBadge={workerBadge}>
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
-        <Text>
-          {userFacingName}({toolMessage})
-          {mcpSuffix}
-        </Text>
-        <Text dimColor>{truncateToLines(toolUseConfirm.description, 3)}</Text>
-      </Box>
-      <Box flexDirection="column">
-        <PermissionRuleExplanation
-          permissionResult={toolUseConfirm.permissionResult}
-          toolType="tool"
-        />
-        <PermissionPrompt
-          options={options}
-          onSelect={handleSelect}
-          onCancel={handleCancel}
-          toolAnalyticsContext={toolAnalyticsContext}
-        />
-      </Box>
-    </PermissionDialog>
+    <PermissionPrompt
+      toolUseConfirm={toolUseConfirm}
+      workerBadge={workerBadge}
+      title="Tool use"
+      header={
+        <Box flexDirection="column" paddingX={2} paddingY={1}>
+          <Text>
+            {userFacingName}({toolMessage})
+            {mcpSuffix}
+          </Text>
+          <Text dimColor>{truncateToLines(toolUseConfirm.description, 3)}</Text>
+        </Box>
+      }
+      options={options}
+      onSelect={onSelect}
+      onCancel={onCancel}
+    />
   )
 }

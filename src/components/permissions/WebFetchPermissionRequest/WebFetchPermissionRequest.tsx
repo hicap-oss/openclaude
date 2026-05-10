@@ -1,15 +1,16 @@
 import React, { useMemo } from 'react'
 import { useAppState } from 'src/state/AppState.js'
 import { Box, Text, useTheme } from '../../../ink.js'
-import { WebFetchTool } from '../../../tools/WebFetchTool/WebFetchTool.js'
 import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js'
-import { Select } from '../../CustomSelect/select.js'
-import { usePermissionRequestLogging } from '../hooks.js'
-import { PermissionDialog } from '../PermissionDialog.js'
+import {
+  PermissionPrompt,
+  type PermissionPromptOption,
+} from '../PermissionPrompt.js'
 import type { PermissionRequestProps } from '../PermissionRequest.js'
-import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js'
-import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js'
-import { logUnaryPermissionEvent } from '../utils.js'
+import {
+  createSimplePermissionHandlers,
+} from '../simplePermissionActions.js'
+import { WebFetchTool } from '../../../tools/WebFetchTool/WebFetchTool.js'
 
 type WebFetchOptionValue = 'yes' | 'yes-dont-ask-again-domain' | 'yes-full-access' | 'no'
 
@@ -38,29 +39,22 @@ export function WebFetchPermissionRequest({
   const isDangerousModeAvailable = useAppState(
     s => s.toolPermissionContext.isBypassPermissionsModeAvailable,
   )
-  const { confirmDangerousMode, dangerousModeDialog } =
-    useDangerousModeConfirmation()
 
   const { url } = toolUseConfirm.input as { url: string }
   const hostname = new URL(url).hostname
 
-  usePermissionRequestLogging(toolUseConfirm, {
-    completion_type: 'tool_use_single',
-    language_name: 'none',
-  })
-
   const options = useMemo(() => {
-    const nextOptions = [
+    const nextOptions: PermissionPromptOption<WebFetchOptionValue>[] = [
       {
         label: 'Yes',
-        value: 'yes' as const,
+        value: 'yes',
       },
     ]
 
     if (shouldShowAlwaysAllowOptions()) {
       nextOptions.push({
         label: <Text>Yes, and don&apos;t ask again for <Text bold>{hostname}</Text></Text>,
-        value: 'yes-dont-ask-again-domain' as const,
+        value: 'yes-dont-ask-again-domain',
       })
 
       if (isDangerousModeAvailable) {
@@ -70,96 +64,77 @@ export function WebFetchPermissionRequest({
               Yes, and enable Full Access for this session
             </Text>
           ),
-          value: 'yes-full-access' as const,
+          value: 'yes-full-access',
+          dangerousMode: 'fullAccess',
         })
       }
     }
 
     nextOptions.push({
-      label: (
-        <Text>
-          No, and tell Claude what to do differently <Text bold>(esc)</Text>
-        </Text>
-      ),
-      value: 'no' as const,
+      label: 'No',
+      value: 'no',
     })
 
     return nextOptions
   }, [hostname, isDangerousModeAvailable])
 
-  const onChange = (newValue: WebFetchOptionValue) => {
-    switch (newValue) {
-      case 'yes':
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
-        toolUseConfirm.onAllow(toolUseConfirm.input, [])
-        onDone()
-        return
-
-      case 'yes-dont-ask-again-domain': {
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
+  const { onSelect, onCancel } = createSimplePermissionHandlers(
+    toolUseConfirm,
+    { onDone, onReject },
+    {
+      yes: {
+        behavior: 'allow',
+      },
+      'yes-dont-ask-again-domain': () => {
         const ruleContent = inputToPermissionRuleContent(toolUseConfirm.input)
-        toolUseConfirm.onAllow(toolUseConfirm.input, [
-          {
-            type: 'addRules',
-            rules: [{ toolName: toolUseConfirm.tool.name, ruleContent }],
-            behavior: 'allow',
-            destination: 'localSettings',
-          },
-        ])
-        onDone()
-        return
-      }
-
-      case 'yes-full-access':
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
-        confirmDangerousMode('fullAccess', () => {
-          toolUseConfirm.onAllow(toolUseConfirm.input, [
+        return {
+          behavior: 'allow' as const,
+          updates: [
             {
-              type: 'setMode',
-              mode: 'fullAccess',
-              destination: 'session',
+              type: 'addRules',
+              rules: [{ toolName: toolUseConfirm.tool.name, ruleContent }],
+              behavior: 'allow',
+              destination: 'localSettings',
             },
-          ])
-          onDone()
-        })
-        return
-
-      case 'no':
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'reject')
-        toolUseConfirm.onReject()
-        onReject()
-        onDone()
-        return
-    }
-  }
-
-  if (dangerousModeDialog) {
-    return dangerousModeDialog
-  }
+          ],
+        }
+      },
+      'yes-full-access': {
+        behavior: 'allow',
+        updates: [
+          {
+            type: 'setMode',
+            mode: 'fullAccess',
+            destination: 'session',
+          },
+        ],
+      },
+      no: {
+        behavior: 'reject',
+      },
+    },
+  )
 
   return (
-    <PermissionDialog title="Fetch" workerBadge={workerBadge}>
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
-        <Text>
-          {WebFetchTool.renderToolUseMessage(
-            toolUseConfirm.input as { url: string; prompt: string },
-            { theme, verbose },
-          )}
-        </Text>
-        <Text dimColor>{toolUseConfirm.description}</Text>
-      </Box>
-      <Box flexDirection="column">
-        <PermissionRuleExplanation
-          permissionResult={toolUseConfirm.permissionResult}
-          toolType="tool"
-        />
-        <Text>Do you want to allow Claude to fetch this content?</Text>
-        <Select
-          options={options}
-          onChange={onChange}
-          onCancel={() => onChange('no')}
-        />
-      </Box>
-    </PermissionDialog>
+    <PermissionPrompt
+      toolUseConfirm={toolUseConfirm}
+      workerBadge={workerBadge}
+      title="Fetch"
+      header={
+        <Box flexDirection="column" paddingX={2} paddingY={1}>
+          <Text>
+            {WebFetchTool.renderToolUseMessage(
+              toolUseConfirm.input as { url: string; prompt: string },
+              { theme, verbose },
+            )}
+          </Text>
+          <Text dimColor>{toolUseConfirm.description}</Text>
+        </Box>
+      }
+      question="Do you want to allow Claude to fetch this content?"
+      options={options}
+      onSelect={onSelect}
+      onCancel={onCancel}
+    />
   )
 }

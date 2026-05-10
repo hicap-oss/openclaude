@@ -11,7 +11,7 @@ import type { CompletionType } from '../../../utils/unaryLogging.js';
 import { Select } from '../../CustomSelect/index.js';
 import { ShowInIDEPrompt } from '../../ShowInIDEPrompt.js';
 import { usePermissionRequestLogging } from '../hooks.js';
-import { PermissionDialog } from '../PermissionDialog.js';
+import { PermissionScaffold } from '../PermissionScaffold.js';
 import type { ToolUseConfirm } from '../PermissionRequest.js';
 import type { WorkerBadgeProps } from '../WorkerBadge.js';
 import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js';
@@ -180,7 +180,7 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
       </Text>
     </Box> : null;
   return <>
-      <PermissionDialog title={title} subtitle={subtitle} innerPaddingX={0} workerBadge={workerBadge}>
+      <PermissionScaffold title={title} subtitle={subtitle} innerPaddingX={0} workerBadge={workerBadge} permissionResult={toolUseConfirm.permissionResult} toolType={operationType === 'read' ? 'read' : 'edit'}>
         {symlinkWarning}
         {content}
         <Box flexDirection="column" paddingX={1}>
@@ -206,7 +206,7 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
           type: 'reject'
         })} onFocus={value_0 => setFocusedOption(value_0)} onInputModeToggle={handleInputModeToggle} />
         </Box>
-      </PermissionDialog>
+      </PermissionScaffold>
       <Box paddingX={1} marginTop={1}>
         <Text dimColor>
           Esc to cancel

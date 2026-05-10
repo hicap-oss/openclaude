@@ -6,9 +6,16 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from '../../services/analytics/index.js'
+import { sanitizeToolNameForAnalytics } from '../../services/analytics/metadata.js'
 import { useSetAppState } from '../../state/AppState.js'
-import { Select } from '../CustomSelect/select.js'
 import type { DangerousPermissionMode } from '../../utils/permissions/dangerousModePrompt.js'
+import { Select } from '../CustomSelect/select.js'
+import { type UnaryEvent, usePermissionRequestLogging } from './hooks.js'
+import { PermissionScaffold } from './PermissionScaffold.js'
+import {
+  type PermissionRequestProps,
+  type ToolUseConfirm,
+} from './PermissionRequest.js'
 import { useDangerousModeConfirmation } from './useDangerousModeConfirmation.js'
 
 export type FeedbackType = 'accept' | 'reject'
@@ -24,17 +31,18 @@ export type PermissionPromptOption<T extends string> = {
   dangerousMode?: DangerousPermissionMode
 }
 
-export type ToolAnalyticsContext = {
-  toolName: string
-  isMcp: boolean
-}
-
-export type PermissionPromptProps<T extends string> = {
+type PermissionPromptProps<T extends string> = Pick<
+  PermissionRequestProps,
+  'workerBadge'
+> & {
+  toolUseConfirm: ToolUseConfirm
+  title: string
+  header: React.ReactNode
+  question?: string | ReactNode
   options: PermissionPromptOption<T>[]
   onSelect: (value: T, feedback?: string) => void
   onCancel?: () => void
-  question?: string | ReactNode
-  toolAnalyticsContext?: ToolAnalyticsContext
+  toolType?: 'tool' | 'command' | 'edit' | 'read'
 }
 
 const DEFAULT_PLACEHOLDERS: Record<FeedbackType, string> = {
@@ -42,13 +50,24 @@ const DEFAULT_PLACEHOLDERS: Record<FeedbackType, string> = {
   reject: 'tell OpenClaude what to do differently',
 }
 
+const DEFAULT_UNARY_EVENT: UnaryEvent = {
+  completion_type: 'tool_use_single',
+  language_name: 'none',
+}
+
 export function PermissionPrompt<T extends string>({
+  toolUseConfirm,
+  workerBadge,
+  title,
+  header,
   options,
   onSelect,
   onCancel,
   question = 'Do you want to proceed?',
-  toolAnalyticsContext,
+  toolType = 'tool',
 }: PermissionPromptProps<T>) {
+  usePermissionRequestLogging(toolUseConfirm, DEFAULT_UNARY_EVENT)
+
   const setAppState = useSetAppState()
   const [acceptFeedback, setAcceptFeedback] = useState('')
   const [rejectFeedback, setRejectFeedback] = useState('')
@@ -61,6 +80,11 @@ export function PermissionPrompt<T extends string>({
     useState(false)
   const { confirmDangerousMode, dangerousModeDialog } =
     useDangerousModeConfirmation()
+
+  const toolAnalyticsContext = {
+    toolName: sanitizeToolNameForAnalytics(toolUseConfirm.tool.name),
+    isMcp: toolUseConfirm.tool.isMcp ?? false,
+  }
 
   const focusedOption = useMemo(
     () => options.find(option => option.value === focusedValue),
@@ -113,8 +137,8 @@ export function PermissionPrompt<T extends string>({
 
     const analyticsProps = {
       toolName:
-        toolAnalyticsContext?.toolName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      isMcp: toolAnalyticsContext?.isMcp ?? false,
+        toolAnalyticsContext.toolName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      isMcp: toolAnalyticsContext.isMcp,
     }
 
     if (option.feedbackConfig.type === 'accept') {
@@ -160,8 +184,8 @@ export function PermissionPrompt<T extends string>({
 
       const analyticsProps = {
         toolName:
-          toolAnalyticsContext?.toolName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        isMcp: toolAnalyticsContext?.isMcp ?? false,
+          toolAnalyticsContext.toolName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        isMcp: toolAnalyticsContext.isMcp,
         has_instructions: !!trimmedFeedback,
         instructions_length: trimmedFeedback.length,
         entered_feedback_mode:
@@ -232,42 +256,52 @@ export function PermissionPrompt<T extends string>({
     typeof question === 'string' ? <Text>{question}</Text> : question
 
   return (
-    <Box flexDirection="column">
-      {renderedQuestion}
-      <Select
-        options={selectOptions}
-        inlineDescriptions
-        onChange={handleSelect}
-        onCancel={handleCancel}
-        onFocus={value => {
-          const nextOption = options.find(option => option.value === value)
+    <PermissionScaffold
+      title={title}
+      workerBadge={workerBadge}
+      header={<Box flexDirection="column">{header}</Box>}
+      permissionResult={toolUseConfirm.permissionResult}
+      toolType={toolType}
+    >
+      <Box flexDirection="column">
+        {renderedQuestion}
+        <Select
+          options={selectOptions}
+          inlineDescriptions
+          onChange={handleSelect}
+          onCancel={handleCancel}
+          onFocus={value => {
+            const nextOption = options.find(option => option.value === value)
 
-          if (
-            nextOption?.feedbackConfig?.type !== 'accept' &&
-            acceptInputMode &&
-            !acceptFeedback.trim()
-          ) {
-            setAcceptInputMode(false)
-          }
+            if (
+              nextOption?.feedbackConfig?.type !== 'accept' &&
+              acceptInputMode &&
+              !acceptFeedback.trim()
+            ) {
+              setAcceptInputMode(false)
+            }
 
-          if (
-            nextOption?.feedbackConfig?.type !== 'reject' &&
-            rejectInputMode &&
-            !rejectFeedback.trim()
-          ) {
-            setRejectInputMode(false)
-          }
+            if (
+              nextOption?.feedbackConfig?.type !== 'reject' &&
+              rejectInputMode &&
+              !rejectFeedback.trim()
+            ) {
+              setRejectInputMode(false)
+            }
 
-          setFocusedValue(value)
-        }}
-        onInputModeToggle={handleInputModeToggle}
-      />
-      <Box marginTop={1}>
-        <Text dimColor>
-          Esc to cancel
-          {showTabHint ? ' · Tab to amend' : ''}
-        </Text>
+            setFocusedValue(value)
+          }}
+          onInputModeToggle={handleInputModeToggle}
+        />
+        <Box marginTop={1}>
+          <Text dimColor>
+            Esc to cancel
+            {showTabHint ? ' | Tab to amend' : ''}
+          </Text>
+        </Box>
       </Box>
-    </Box>
+    </PermissionScaffold>
   )
 }
+
+export type { PermissionPromptProps }

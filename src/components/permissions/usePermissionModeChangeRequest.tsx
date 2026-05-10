@@ -1,7 +1,7 @@
 import React from 'react'
 import type { ToolPermissionContext } from '../../Tool.js'
 import type { PermissionMode } from '../../utils/permissions/PermissionMode.js'
-import { getPermissionModeChangeRequestDecision } from '../../utils/permissions/permissionSetup.js'
+import { requestPermissionModeChange as runPermissionModeChangeRequest } from '../../utils/permissions/permissionModeChange.js'
 import { useDangerousModeConfirmation } from './useDangerousModeConfirmation.js'
 
 type PermissionModeChangeRequest = {
@@ -34,36 +34,18 @@ export function usePermissionModeChangeRequest() {
       skipDangerousModePrompt = false,
       requireLocalConfirmation,
     }: PermissionModeChangeRequest): Promise<boolean> => {
-      const modeDecision = await getPermissionModeChangeRequestDecision({
+      const result = await runPermissionModeChangeRequest({
         mode,
         toolPermissionContext,
+        onApply,
+        onBlocked,
         allowDangerousModeConfirmation,
         skipDangerousModePrompt,
         requireLocalConfirmation,
+        onConfirmDangerousMode: requestDangerousModeConfirmation,
       })
 
-      if (modeDecision.status === 'blocked') {
-        onBlocked?.(modeDecision.error)
-        return false
-      }
-
-      if (modeDecision.status === 'confirm') {
-        requestDangerousModeConfirmation(modeDecision.mode, () => {
-          void requestPermissionModeChange({
-            mode,
-            toolPermissionContext,
-            onApply,
-            onBlocked,
-            allowDangerousModeConfirmation,
-            skipDangerousModePrompt: true,
-            requireLocalConfirmation,
-          })
-        })
-        return false
-      }
-
-      onApply()
-      return true
+      return result.status === 'applied'
     },
     [requestDangerousModeConfirmation],
   )

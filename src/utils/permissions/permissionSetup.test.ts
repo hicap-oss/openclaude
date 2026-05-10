@@ -5,6 +5,7 @@ import {
   getDangerousPermissionModeTransitionError,
   getEffectiveDefaultPermissionModeFromSettingsSources,
 } from './permissionSetup.js'
+import { requestPermissionModeChange } from './permissionModeChange.js'
 
 describe('getEffectiveDefaultPermissionModeFromSettingsSources', () => {
   test('ignores dangerous default modes from shared project settings', () => {
@@ -134,5 +135,124 @@ describe('applyPermissionUpdatesToLiveContext', () => {
 
     expect(updated.mode).toBe('default')
     expect(updated.prePlanMode).toBeUndefined()
+  })
+})
+
+describe('requestPermissionModeChange', () => {
+  test('applies the mode change when validation passes', async () => {
+    let applied = false
+
+    const result = await requestPermissionModeChange({
+      mode: 'default',
+      toolPermissionContext: {
+        isBypassPermissionsModeAvailable: true,
+      },
+      onApply: () => {
+        applied = true
+      },
+      deps: {
+        getPermissionModeChangeRequestDecision: async () => ({
+          status: 'apply',
+        }),
+      },
+    })
+
+    expect(result).toEqual({ status: 'applied' })
+    expect(applied).toBe(true)
+  })
+
+  test('reports blocked transitions', async () => {
+    const errors: string[] = []
+
+    const result = await requestPermissionModeChange({
+      mode: 'fullAccess',
+      toolPermissionContext: {
+        isBypassPermissionsModeAvailable: false,
+      },
+      onApply: () => {
+        throw new Error('should not apply')
+      },
+      onBlocked: error => {
+        errors.push(error)
+      },
+      deps: {
+        getPermissionModeChangeRequestDecision: async () => ({
+          status: 'blocked',
+          error: 'blocked by policy',
+        }),
+      },
+    })
+
+    expect(result).toEqual({
+      status: 'blocked',
+      error: 'blocked by policy',
+    })
+    expect(errors).toEqual(['blocked by policy'])
+  })
+
+  test('requires a confirmation handler for dangerous-mode prompts', async () => {
+    const result = await requestPermissionModeChange({
+      mode: 'fullAccess',
+      toolPermissionContext: {
+        isBypassPermissionsModeAvailable: true,
+      },
+      onApply: () => {
+        throw new Error('should not apply')
+      },
+      deps: {
+        getPermissionModeChangeRequestDecision: async () => ({
+          status: 'confirm',
+          mode: 'fullAccess',
+        }),
+      },
+    })
+
+    expect(result).toEqual({
+      status: 'blocked',
+      error:
+        'Cannot set permission mode to fullAccess without a dangerous-mode confirmation handler',
+    })
+  })
+
+  test('continues through confirmation and applies after acceptance', async () => {
+    let applied = 0
+    let callCount = 0
+
+    const result = await requestPermissionModeChange({
+      mode: 'fullAccess',
+      toolPermissionContext: {
+        isBypassPermissionsModeAvailable: true,
+      },
+      onApply: () => {
+        applied += 1
+      },
+      onConfirmDangerousMode: (_mode, onConfirm) => {
+        onConfirm()
+      },
+      deps: {
+        getPermissionModeChangeRequestDecision: async ({
+          skipDangerousModePrompt,
+        }) => {
+          callCount += 1
+          if (!skipDangerousModePrompt) {
+            return {
+              status: 'confirm',
+              mode: 'fullAccess',
+            }
+          }
+
+          return { status: 'apply' }
+        },
+      },
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(result).toEqual({
+      status: 'confirm-pending',
+      mode: 'fullAccess',
+    })
+    expect(callCount).toBe(2)
+    expect(applied).toBe(1)
   })
 })
