@@ -812,7 +812,26 @@ function shouldRetry(error: APIError): boolean {
 }
 
 export function getDefaultMaxRetries(): number {
-  return validateRetryAttemptsEnvVar(process.env.OPENCLAUDE_MAX_RETRIES)
+  const openClaudeMaxRetries = process.env.OPENCLAUDE_MAX_RETRIES
+  if (openClaudeMaxRetries) {
+    return validateRetryAttemptsEnvVar(
+      'OPENCLAUDE_MAX_RETRIES',
+      openClaudeMaxRetries,
+    )
+  }
+
+  const legacyMaxRetries = process.env.CLAUDE_CODE_MAX_RETRIES
+  if (legacyMaxRetries) {
+    logForDebugging(
+      'CLAUDE_CODE_MAX_RETRIES is deprecated; use OPENCLAUDE_MAX_RETRIES instead',
+    )
+    return validateRetryAttemptsEnvVar(
+      'CLAUDE_CODE_MAX_RETRIES',
+      legacyMaxRetries,
+    )
+  }
+
+  return DEFAULT_MAX_RETRIES
 }
 
 export function getDefaultRetryDelayMs(): number {
@@ -827,20 +846,23 @@ function getMaxRetries(options: RetryOptions): number {
   return options.maxRetries ?? getDefaultMaxRetries()
 }
 
-function validateRetryAttemptsEnvVar(value: string | undefined): number {
+function validateRetryAttemptsEnvVar(
+  envVarName: string,
+  value: string | undefined,
+): number {
   if (!value) {
     return DEFAULT_MAX_RETRIES
   }
   const parsed = parseInt(value, 10)
   if (isNaN(parsed) || parsed < 0) {
     logForDebugging(
-      `OPENCLAUDE_MAX_RETRIES Invalid value "${value}" (using default: ${DEFAULT_MAX_RETRIES})`,
+      `${envVarName} Invalid value "${value}" (using default: ${DEFAULT_MAX_RETRIES})`,
     )
     return DEFAULT_MAX_RETRIES
   }
   if (parsed > MAX_CONFIGURABLE_RETRIES) {
     logForDebugging(
-      `OPENCLAUDE_MAX_RETRIES Capped from ${parsed} to ${MAX_CONFIGURABLE_RETRIES}`,
+      `${envVarName} Capped from ${parsed} to ${MAX_CONFIGURABLE_RETRIES}`,
     )
     return MAX_CONFIGURABLE_RETRIES
   }

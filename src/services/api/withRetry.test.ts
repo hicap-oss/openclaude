@@ -23,6 +23,7 @@ const envKeys = [
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
   'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_MAX_RETRIES',
   'OPENCLAUDE_MAX_RETRIES',
   'OPENCLAUDE_RETRY_DELAY_MS',
   'OPENAI_MODEL',
@@ -82,6 +83,19 @@ describe('retry configuration', () => {
     process.env.OPENCLAUDE_MAX_RETRIES = '0'
     const { getDefaultMaxRetries } = await importFreshWithRetryModule()
     expect(getDefaultMaxRetries()).toBe(0)
+  })
+
+  test('falls back to legacy CLAUDE_CODE_MAX_RETRIES when new env var is absent', async () => {
+    process.env.CLAUDE_CODE_MAX_RETRIES = '0'
+    const { getDefaultMaxRetries } = await importFreshWithRetryModule()
+    expect(getDefaultMaxRetries()).toBe(0)
+  })
+
+  test('prefers OPENCLAUDE_MAX_RETRIES over legacy CLAUDE_CODE_MAX_RETRIES', async () => {
+    process.env.OPENCLAUDE_MAX_RETRIES = '3'
+    process.env.CLAUDE_CODE_MAX_RETRIES = '0'
+    const { getDefaultMaxRetries } = await importFreshWithRetryModule()
+    expect(getDefaultMaxRetries()).toBe(3)
   })
 
   test('falls back to default retry attempts for invalid values', async () => {
