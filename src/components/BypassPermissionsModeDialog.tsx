@@ -3,7 +3,7 @@ import React from 'react';
 import { logEvent } from 'src/services/analytics/index.js';
 import { Box, Link, Newline, Text } from '../ink.js';
 import { gracefulShutdownSync } from '../utils/gracefulShutdown.js';
-import { updateSettingsForSource } from '../utils/settings/settings.js';
+import { persistDangerousModeAcceptance } from '../utils/permissions/dangerousModePromptRuntime.js';
 import { Select } from './CustomSelect/index.js';
 import { Dialog } from './design-system/Dialog.js';
 import {
@@ -35,15 +35,7 @@ export function BypassPermissionsModeDialog(t0: Props) {
         case "accept":
           {
             logEvent("tengu_bypass_permissions_mode_dialog_accept", {});
-            if (mode === "fullAccess") {
-              updateSettingsForSource("userSettings", {
-                skipFullAccessModePermissionPrompt: true
-              });
-            } else {
-              updateSettingsForSource("userSettings", {
-                skipDangerousModePermissionPrompt: true
-              });
-            }
+            persistDangerousModeAcceptance(mode);
             onAccept();
             break bb3;
           }

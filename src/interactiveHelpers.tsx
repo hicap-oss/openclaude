@@ -26,10 +26,11 @@ import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js';
 import { updateGithubRepoPathMapping } from './utils/githubRepoPathMapping.js';
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js';
 import { usesAnthropicAccountFlow } from './utils/model/providers.js';
+import { showDangerousModePromptIfNeeded } from './utils/permissions/dangerousModePromptFlow.js';
 import type { PermissionMode } from './utils/permissions/PermissionMode.js';
 import { getBaseRenderOptions } from './utils/renderOptions.js';
 import { getSettingsWithAllErrors } from './utils/settings/allErrors.js';
-import { hasAutoModeOptIn, hasSkipDangerousModePermissionPrompt, hasSkipFullAccessModePermissionPrompt } from './utils/settings/settings.js';
+import { hasAutoModeOptIn } from './utils/settings/settings.js';
 export function completeOnboarding(): void {
   saveGlobalConfig(current => ({
     ...current,
@@ -225,14 +226,7 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
       });
     }
   }
-  const dangerousMode = permissionMode === 'fullAccess' ? 'fullAccess' : 'bypassPermissions';
-  const hasAcceptedDangerousModePrompt = dangerousMode === 'fullAccess' ? hasSkipFullAccessModePermissionPrompt() : hasSkipDangerousModePermissionPrompt();
-  if ((permissionMode === 'bypassPermissions' || permissionMode === 'fullAccess' || allowDangerouslySkipPermissions) && !hasAcceptedDangerousModePrompt) {
-    const {
-      BypassPermissionsModeDialog
-    } = await import('./components/BypassPermissionsModeDialog.js');
-    await showSetupDialog(root, done => <BypassPermissionsModeDialog mode={dangerousMode} onAccept={done} />);
-  }
+  await showDangerousModePromptIfNeeded(root, permissionMode, allowDangerouslySkipPermissions, showSetupDialog);
   if (feature('TRANSCRIPT_CLASSIFIER')) {
     // Only show the opt-in dialog if auto mode actually resolved — if the
     // gate denied it (org not allowlisted, settings disabled), showing
