@@ -63,6 +63,15 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
   ? (require('./autoModeState.js') as typeof import('./autoModeState.js'))
   : null
 
+function applyPermissionUpdatesToLiveContext(
+  context: ToolPermissionContext,
+  updates: PermissionUpdate[],
+): ToolPermissionContext {
+  const { applyPermissionUpdatesToLiveContext: applyLiveUpdates } =
+    require('./permissionSetup.js') as typeof import('./permissionSetup.js')
+  return applyLiveUpdates(context, updates)
+}
+
 import {
   addToTurnClassifierDuration,
   getTotalCacheCreationInputTokens,
@@ -423,14 +432,19 @@ async function runPermissionRequestHooksForHeadlessAgent(
         const finalInput = decision.updatedInput ?? input
         // Persist permission updates if provided
         if (decision.updatedPermissions?.length) {
-          persistPermissionUpdates(decision.updatedPermissions)
-          context.setAppState(prev => ({
-            ...prev,
-            toolPermissionContext: applyPermissionUpdates(
+          let updatedContext = context.getAppState().toolPermissionContext
+          context.setAppState(prev => {
+            updatedContext = applyPermissionUpdatesToLiveContext(
               prev.toolPermissionContext,
-              decision.updatedPermissions!,
-            ),
-          }))
+              decision.updatedPermissions,
+            )
+            if (prev.toolPermissionContext === updatedContext) return prev
+            return {
+              ...prev,
+              toolPermissionContext: updatedContext,
+            }
+          })
+          persistPermissionUpdates(decision.updatedPermissions)
         }
         return {
           behavior: 'allow',

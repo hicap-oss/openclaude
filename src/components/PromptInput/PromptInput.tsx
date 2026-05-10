@@ -76,7 +76,7 @@ import { logError } from '../../utils/log.js';
 import { isOpus1mMergeEnabled, modelDisplayString } from '../../utils/model/model.js';
 import { setAutoModeActive } from '../../utils/permissions/autoModeState.js';
 import { cyclePermissionMode, getNextPermissionMode } from '../../utils/permissions/getNextPermissionMode.js';
-import { getDangerousPermissionModeTransitionError, transitionPermissionMode } from '../../utils/permissions/permissionSetup.js';
+import { transitionPermissionMode } from '../../utils/permissions/permissionSetup.js';
 import { getPlatform } from '../../utils/platform.js';
 import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js';
 import { editPromptInEditor } from '../../utils/promptEditor.js';
@@ -104,7 +104,7 @@ import { getFastIconString } from '../FastIcon.js';
 import { GlobalSearchDialog } from '../GlobalSearchDialog.js';
 import { HistorySearchDialog } from '../HistorySearchDialog.js';
 import { ModelPicker } from '../ModelPicker.js';
-import { useDangerousModeConfirmation } from '../permissions/useDangerousModeConfirmation.js';
+import { usePermissionModeChangeRequest } from '../permissions/usePermissionModeChangeRequest.js';
 import { QuickOpenDialog } from '../QuickOpenDialog.js';
 import TextInput from '../TextInput.js';
 import { ThinkingToggle } from '../ThinkingToggle.js';
@@ -426,10 +426,10 @@ function PromptInput({
   const [previousModeBeforeAuto, setPreviousModeBeforeAuto] = useState<PermissionMode | null>(null);
   const autoModeOptInTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const {
-    confirmDangerousMode,
     dangerousModeDialog,
-    isConfirmingDangerousMode
-  } = useDangerousModeConfirmation();
+    isConfirmingDangerousMode,
+    requestPermissionModeChange
+  } = usePermissionModeChangeRequest();
 
   // Check if cursor is on the first line of input
   const isCursorOnFirstLine = useMemo(() => {
@@ -1480,24 +1480,6 @@ function PromptInput({
         setHelpOpen(false);
       }
     };
-    const validateDangerousModeChange = async (mode: PermissionMode): Promise<boolean> => {
-      const dangerousModeError = await getDangerousPermissionModeTransitionError({
-        mode,
-        toolPermissionContext,
-        requireLocalConfirmation: false
-      });
-      if (!dangerousModeError) {
-        return true;
-      }
-      addNotification({
-        key: `permission-mode-cycle-${mode}`,
-        text: dangerousModeError,
-        color: 'warning',
-        priority: 'high'
-      });
-      return false;
-    };
-
     // When viewing a teammate, cycle their mode instead of the leader's
     if (isAgentSwarmsEnabled() && viewedTeammate && viewingAgentTaskId) {
       const teammateContext: ToolPermissionContext = {
@@ -1507,9 +1489,6 @@ function PromptInput({
       // Pass undefined for teamContext (unused but kept for API compatibility)
       const nextMode = getNextPermissionMode(teammateContext, undefined);
       const applyTeammateModeChange = async () => {
-        if (!(await validateDangerousModeChange(nextMode))) {
-          return;
-        }
         logEvent('tengu_mode_cycle', {
           to: nextMode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
         });
@@ -1537,14 +1516,21 @@ function PromptInput({
           setHelpOpen(false);
         }
       };
-
-      if (nextMode === 'bypassPermissions' || nextMode === 'fullAccess') {
-        confirmDangerousMode(nextMode, () => {
-          void applyTeammateModeChange();
-        });
-      } else {
+      void requestPermissionModeChange({
+        mode: nextMode,
+        toolPermissionContext: teammateContext,
+        onApply: () => {
         void applyTeammateModeChange();
-      }
+        },
+        onBlocked: error => {
+          addNotification({
+            key: `permission-mode-cycle-${nextMode}`,
+            text: error,
+            color: 'warning',
+            priority: 'high'
+          });
+        }
+      });
       return;
     }
 
@@ -1552,16 +1538,23 @@ function PromptInput({
     logForDebugging(`[auto-mode] handleCycleMode: currentMode=${toolPermissionContext.mode} isAutoModeAvailable=${toolPermissionContext.isAutoModeAvailable} showAutoModeOptIn=${showAutoModeOptIn} timeoutPending=${!!autoModeOptInTimeoutRef.current}`);
     const nextMode = getNextPermissionMode(toolPermissionContext, teamContext);
     if (nextMode === 'bypassPermissions' || nextMode === 'fullAccess') {
-      confirmDangerousMode(nextMode, () => {
-        void (async () => {
-          if (!(await validateDangerousModeChange(nextMode))) {
-            return;
-          }
+      void requestPermissionModeChange({
+        mode: nextMode,
+        toolPermissionContext,
+        onApply: () => {
           const {
             context: preparedContext
           } = cyclePermissionMode(toolPermissionContext, teamContext);
           applyModeChange(nextMode, preparedContext);
-        })();
+        },
+        onBlocked: error => {
+          addNotification({
+            key: `permission-mode-cycle-${nextMode}`,
+            text: error,
+            color: 'warning',
+            priority: 'high'
+          });
+        }
       });
       return;
     }
@@ -1636,7 +1629,7 @@ function PromptInput({
       context: preparedContext
     } = cyclePermissionMode(toolPermissionContext, teamContext);
     applyModeChange(nextMode, preparedContext);
-  }, [addNotification, confirmDangerousMode, helpOpen, setAppState, setHelpOpen, setToolPermissionContext, showAutoModeOptIn, teamContext, toolPermissionContext, viewedTeammate, viewingAgentTaskId]);
+  }, [addNotification, helpOpen, requestPermissionModeChange, setAppState, setHelpOpen, setToolPermissionContext, showAutoModeOptIn, teamContext, toolPermissionContext, viewedTeammate, viewingAgentTaskId]);
 
   // Handler for auto mode opt-in dialog acceptance
   const handleAutoModeOptInAccept = useCallback(() => {

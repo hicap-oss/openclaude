@@ -22,8 +22,8 @@ import {
 } from '../utils/inProcessTeammateHelpers.js'
 import { createAssistantMessage } from '../utils/messages.js'
 import {
-  getDangerousPermissionModeTransitionError,
-  transitionPermissionMode,
+  applyPermissionModeChange,
+  getPermissionModeChangeRequestDecision,
 } from '../utils/permissions/permissionSetup.js'
 import {
   permissionModeFromString,
@@ -170,35 +170,26 @@ export function useInboxPoller({
           if (approvalResponse.approved) {
             // Use leader's permission mode if provided, otherwise default
             const targetMode = approvalResponse.permissionMode ?? 'default'
-            if (targetMode === 'bypassPermissions' || targetMode === 'fullAccess') {
-              const dangerousModeError =
-                await getDangerousPermissionModeTransitionError({
-                  mode: targetMode,
-                  toolPermissionContext:
-                    store.getState().toolPermissionContext,
-                  requireLocalConfirmation: false,
-                })
-              if (dangerousModeError) {
-                logForDebugging(
-                  `[InboxPoller] Rejecting plan-approval mode change from team-lead: ${dangerousModeError}`,
-                )
-                continue
-              }
+            const modeDecision = await getPermissionModeChangeRequestDecision({
+              mode: targetMode,
+              toolPermissionContext: store.getState().toolPermissionContext,
+              requireLocalConfirmation: false,
+            })
+            if (modeDecision.status === 'blocked') {
+              logForDebugging(
+                `[InboxPoller] Rejecting plan-approval mode change from team-lead: ${modeDecision.error}`,
+              )
+              continue
             }
 
             // Transition out of plan mode
             setAppState(prev => {
-              const nextContext = transitionPermissionMode(
-                prev.toolPermissionContext.mode,
-                targetMode,
-                prev.toolPermissionContext,
-              )
               return {
                 ...prev,
-                toolPermissionContext: {
-                  ...nextContext,
-                  mode: targetMode,
-                },
+                toolPermissionContext: applyPermissionModeChange(
+                  prev.toolPermissionContext,
+                  targetMode,
+                ),
               }
             })
             logForDebugging(
@@ -592,20 +583,16 @@ export function useInboxPoller({
         }
 
         const targetMode = permissionModeFromString(parsed.mode)
-        if (targetMode === 'bypassPermissions' || targetMode === 'fullAccess') {
-          const dangerousModeError =
-            await getDangerousPermissionModeTransitionError({
-              mode: targetMode,
-              toolPermissionContext:
-                store.getState().toolPermissionContext,
-              requireLocalConfirmation: false,
-            })
-          if (dangerousModeError) {
-            logForDebugging(
-              `[InboxPoller] Rejecting mode change from team-lead: ${dangerousModeError}`,
-            )
-            continue
-          }
+        const modeDecision = await getPermissionModeChangeRequestDecision({
+          mode: targetMode,
+          toolPermissionContext: store.getState().toolPermissionContext,
+          requireLocalConfirmation: false,
+        })
+        if (modeDecision.status === 'blocked') {
+          logForDebugging(
+            `[InboxPoller] Rejecting mode change from team-lead: ${modeDecision.error}`,
+          )
+          continue
         }
         logForDebugging(
           `[InboxPoller] Applying mode change from team-lead: ${targetMode}`,
@@ -613,17 +600,12 @@ export function useInboxPoller({
 
         // Update local permission context
         setAppState(prev => {
-          const nextContext = transitionPermissionMode(
-            prev.toolPermissionContext.mode,
-            targetMode,
-            prev.toolPermissionContext,
-          )
           return {
             ...prev,
-            toolPermissionContext: {
-              ...nextContext,
-              mode: targetMode,
-            },
+            toolPermissionContext: applyPermissionModeChange(
+              prev.toolPermissionContext,
+              targetMode,
+            ),
           }
         })
 

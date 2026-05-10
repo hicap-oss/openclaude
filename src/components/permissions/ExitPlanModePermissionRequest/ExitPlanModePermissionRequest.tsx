@@ -27,7 +27,7 @@ import { getMainLoopModel, getRuntimeMainLoopModel, modelDisplayString } from '.
 import { createPromptRuleContent, isClassifierPermissionsEnabled, PROMPT_PREFIX } from '../../../utils/permissions/bashClassifier.js';
 import { type PermissionMode, toExternalPermissionMode } from '../../../utils/permissions/PermissionMode.js';
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js';
-import { getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, restoreDangerousPermissions, stripDangerousPermissionsForAutoMode } from '../../../utils/permissions/permissionSetup.js';
+import { isAutoModeGateEnabled, restoreDangerousPermissions, stripDangerousPermissionsForAutoMode } from '../../../utils/permissions/permissionSetup.js';
 import { getPewterLedgerVariant, isPlanModeInterviewPhaseEnabled } from '../../../utils/planModeV2.js';
 import { getPlan, getPlanFilePath } from '../../../utils/plans.js';
 import { editFileInEditor, editPromptInEditor } from '../../../utils/promptEditor.js';
@@ -38,7 +38,7 @@ import { Markdown } from '../../Markdown.js';
 import { PermissionDialog } from '../PermissionDialog.js';
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
-import { useDangerousModeConfirmation } from '../useDangerousModeConfirmation.js';
+import { usePermissionModeChangeRequest } from '../usePermissionModeChangeRequest.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js') : null;
@@ -53,10 +53,6 @@ type DangerousPlanExitMode = Extract<
   PermissionMode,
   'bypassPermissions' | 'fullAccess'
 >;
-
-function requiresDangerousModeConfirmation(value: ResponseValue): boolean {
-  return value === 'yes-bypass-permissions' || value === 'yes-full-access' || value === 'yes-bypass-permissions-keep-context' || value === 'yes-full-access-keep-context';
-}
 
 function dangerousModeForResponse(value: ResponseValue): DangerousPlanExitMode | null {
   if (value === 'yes-full-access' || value === 'yes-full-access-keep-context') {
@@ -172,9 +168,9 @@ export function ExitPlanModePermissionRequest({
   const [pastedContents, setPastedContents] = useState<Record<number, PastedContent>>({});
   const nextPasteIdRef = useRef(0);
   const {
-    confirmDangerousMode,
-    dangerousModeDialog
-  } = useDangerousModeConfirmation();
+    dangerousModeDialog,
+    requestPermissionModeChange
+  } = usePermissionModeChangeRequest();
   const showClearContext = useAppState(s => s.settings.showClearContextOnPlanAccept) ?? false;
   const ultraplanSessionUrl = useAppState(s => s.ultraplanSessionUrl);
   const ultraplanLaunching = useAppState(s => s.ultraplanLaunching);
@@ -204,6 +200,26 @@ export function ExitPlanModePermissionRequest({
     planAuthorName,
     onFeedbackChange: setPlanFeedback
   }), [showClearContext, showUltraplan, usage, mode, isAutoModeAvailable, dangerousPlanExitMode, planAuthorName]);
+  const requestPlanExitModeChange = useCallback(async (value: ResponseValue, onApply: () => void) => {
+    const dangerousMode = dangerousModeForResponse(value);
+    if (!dangerousMode) {
+      onApply();
+      return;
+    }
+    await requestPermissionModeChange({
+      mode: dangerousMode,
+      toolPermissionContext,
+      onApply,
+      onBlocked: error => {
+        addNotification({
+          key: `exit-plan-mode-${dangerousMode}`,
+          text: error,
+          color: 'warning',
+          priority: 'high'
+        });
+      }
+    });
+  }, [addNotification, requestPermissionModeChange, toolPermissionContext]);
   function onImagePaste(base64Image: string, mediaType?: string, filename?: string, dimensions?: ImageDimensions, _sourcePath?: string) {
     const pasteId = nextPasteIdRef.current++;
     const newContent: PastedContent = {
@@ -355,24 +371,6 @@ export function ExitPlanModePermissionRequest({
     const updatedInput = isV2 && !planEditedLocally ? {} : {
       plan: currentPlan
     };
-    const dangerousMode = dangerousModeForResponse(value);
-    if (dangerousMode) {
-      const dangerousModeError = await getDangerousPermissionModeTransitionError({
-        mode: dangerousMode,
-        toolPermissionContext,
-        requireLocalConfirmation: false
-      });
-      if (dangerousModeError) {
-        addNotification({
-          key: `exit-plan-mode-${dangerousMode}`,
-          text: dangerousModeError,
-          color: 'warning',
-          priority: 'high'
-        });
-        return;
-      }
-    }
-
     // If auto was active during plan (from auto mode or opt-in) and NOT going
     // to auto, deactivate auto + restore permissions + fire exit attachment.
     if (feature('TRANSCRIPT_CLASSIFIER')) {
@@ -608,16 +606,9 @@ export function ExitPlanModePermissionRequest({
         <Text dimColor>Would you like to proceed?</Text>
         <Box marginTop={1}>
           <Select options={options} onChange={v => {
-          if (requiresDangerousModeConfirmation(v)) {
-            const mode = dangerousModeForResponse(v);
-            if (mode) {
-              confirmDangerousMode(mode, () => {
-                void handleResponseRef.current(v);
-              });
-              return;
-            }
-          }
-          void handleResponseRef.current(v);
+          void requestPlanExitModeChange(v, () => {
+            void handleResponseRef.current(v);
+          });
         }} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
         </Box>
         {editorName && <Box flexDirection="row" gap={1} marginTop={1}>
@@ -735,16 +726,9 @@ export function ExitPlanModePermissionRequest({
                 </Text>
                 <Box marginTop={1}>
                   <Select options={options} onChange={v => {
-                if (requiresDangerousModeConfirmation(v)) {
-                  const mode = dangerousModeForResponse(v);
-                  if (mode) {
-                    confirmDangerousMode(mode, () => {
-                      void handleResponse(v);
-                    });
-                    return;
-                  }
-                }
-                void handleResponse(v);
+                void requestPlanExitModeChange(v, () => {
+                  void handleResponse(v);
+                });
               }} onCancel={() => handleCancelRef.current?.()} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} />
                 </Box>
               </>}

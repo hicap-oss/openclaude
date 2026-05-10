@@ -19,7 +19,6 @@ import { execFileNoThrow } from '../../utils/execFileNoThrow.js';
 import { truncateToWidth } from '../../utils/format.js';
 import { getNextPermissionMode } from '../../utils/permissions/getNextPermissionMode.js';
 import { getModeColor, type PermissionMode, permissionModeFromString, permissionModeSymbol } from '../../utils/permissions/PermissionMode.js';
-import { getDangerousPermissionModeTransitionError } from '../../utils/permissions/permissionSetup.js';
 import { jsonStringify } from '../../utils/slowOperations.js';
 import { IT2_COMMAND, isInsideTmuxSync } from '../../utils/swarm/backends/detection.js';
 import { ensureBackendsRegistered, getBackendByType, getCachedBackend } from '../../utils/swarm/backends/registry.js';
@@ -31,7 +30,7 @@ import { getTeammateStatuses, type TeammateStatus, type TeamSummary } from '../.
 import { createModeSetRequestMessage, sendShutdownRequestToMailbox, writeToMailbox } from '../../utils/teammateMailbox.js';
 import { Dialog } from '../design-system/Dialog.js';
 import ThemedText from '../design-system/ThemedText.js';
-import { useDangerousModeConfirmation } from '../permissions/useDangerousModeConfirmation.js';
+import { usePermissionModeChangeRequest } from '../permissions/usePermissionModeChangeRequest.js';
 type Props = {
   initialTeams?: TeamSummary[];
   onDone: () => void;
@@ -89,10 +88,10 @@ export function TeamsDialog({
   // Get isBypassPermissionsModeAvailable from AppState
   const isBypassAvailable = useAppState(s => s.toolPermissionContext.isBypassPermissionsModeAvailable);
   const {
-    confirmDangerousMode,
     dangerousModeDialog,
-    isConfirmingDangerousMode
-  } = useDangerousModeConfirmation();
+    isConfirmingDangerousMode,
+    requestPermissionModeChange
+  } = usePermissionModeChangeRequest();
   const goBackToList = (): void => {
     setDialogLevel({
       type: 'teammateList',
@@ -103,61 +102,56 @@ export function TeamsDialog({
 
   // Handler for confirm:cycleMode - cycle teammate permission modes
   const handleCycleMode = useCallback(() => {
-    const validateDangerousModeChange = async (mode: PermissionMode): Promise<boolean> => {
-      const dangerousModeError = await getDangerousPermissionModeTransitionError({
-        mode,
-        toolPermissionContext: {
-          isBypassPermissionsModeAvailable: isBypassAvailable
-        },
-        requireLocalConfirmation: false
-      });
-      if (!dangerousModeError) {
-        return true;
-      }
-      addNotification({
-        key: `teams-dangerous-mode-${mode}`,
-        text: dangerousModeError,
-        color: 'warning',
-        priority: 'high'
-      });
-      return false;
-    };
     if (dialogLevel.type === 'teammateDetail' && currentTeammate) {
       // Detail view: cycle just this teammate
       const nextMode = getNextTeammateMode(currentTeammate, isBypassAvailable);
       const applyModeChange = async () => {
-        if (!(await validateDangerousModeChange(nextMode))) {
-          return;
-        }
         cycleTeammateMode(currentTeammate, dialogLevel.teamName, isBypassAvailable, nextMode);
         setRefreshKey(k => k + 1);
       };
-      if (nextMode === 'bypassPermissions' || nextMode === 'fullAccess') {
-        confirmDangerousMode(nextMode, () => {
-          void applyModeChange();
-        });
-      } else {
+      void requestPermissionModeChange({
+        mode: nextMode,
+        toolPermissionContext: {
+          isBypassPermissionsModeAvailable: isBypassAvailable
+        },
+        onApply: () => {
         void applyModeChange();
-      }
+        },
+        onBlocked: error => {
+          addNotification({
+            key: `teams-dangerous-mode-${nextMode}`,
+            text: error,
+            color: 'warning',
+            priority: 'high'
+          });
+        }
+      });
     } else if (dialogLevel.type === 'teammateList' && teammateStatuses.length > 0) {
       // List view: cycle all teammates in tandem
       const targetMode = getNextModeForTeammateBatch(teammateStatuses, isBypassAvailable);
       const applyModeChange = async () => {
-        if (!(await validateDangerousModeChange(targetMode))) {
-          return;
-        }
         cycleAllTeammateModes(teammateStatuses, dialogLevel.teamName, isBypassAvailable, targetMode);
         setRefreshKey(k => k + 1);
       };
-      if (targetMode === 'bypassPermissions' || targetMode === 'fullAccess') {
-        confirmDangerousMode(targetMode, () => {
-          void applyModeChange();
-        });
-      } else {
+      void requestPermissionModeChange({
+        mode: targetMode,
+        toolPermissionContext: {
+          isBypassPermissionsModeAvailable: isBypassAvailable
+        },
+        onApply: () => {
         void applyModeChange();
-      }
+        },
+        onBlocked: error => {
+          addNotification({
+            key: `teams-dangerous-mode-${targetMode}`,
+            text: error,
+            color: 'warning',
+            priority: 'high'
+          });
+        }
+      });
     }
-  }, [addNotification, confirmDangerousMode, currentTeammate, dialogLevel, isBypassAvailable, teammateStatuses]);
+  }, [addNotification, currentTeammate, dialogLevel, isBypassAvailable, requestPermissionModeChange, teammateStatuses]);
 
   // Use keybindings for mode cycling
   useKeybindings({

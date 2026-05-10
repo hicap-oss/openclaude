@@ -22,7 +22,7 @@ import { errorMessage } from '../utils/errors.js';
 import { enqueue } from '../utils/messageQueueManager.js';
 import { buildSystemInitMessage } from '../utils/messages/systemInit.js';
 import { createBridgeStatusMessage, createSystemMessage } from '../utils/messages.js';
-import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, transitionPermissionMode } from '../utils/permissions/permissionSetup.js';
+import { applyPermissionModeChange, getPermissionModeChangeRequestDecision } from '../utils/permissions/permissionSetup.js';
 import { getLeaderToolUseConfirmQueue } from '../utils/swarm/leaderPermissionBridge.js';
 
 /** How long after a failure before replBridgeEnabled is auto-cleared (stops retries). */
@@ -424,23 +424,14 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               // These mirror print.ts handleSetPermissionMode; the bridge
               // can't import the checks directly (bootstrap-isolation), so
               // it relies on this verdict to emit the error response.
-              if (mode === 'bypassPermissions' || mode === 'fullAccess') {
-                const dangerousModeError = await getDangerousPermissionModeTransitionError({
-                  mode,
-                  toolPermissionContext: store.getState().toolPermissionContext
-                });
-                if (dangerousModeError) {
-                  return {
-                    ok: false,
-                    error: dangerousModeError
-                  };
-                }
-              }
-              if (feature('TRANSCRIPT_CLASSIFIER') && mode === 'auto' && !isAutoModeGateEnabled()) {
-                const reason = getAutoModeUnavailableReason();
+              const modeDecision = await getPermissionModeChangeRequestDecision({
+                mode,
+                toolPermissionContext: store.getState().toolPermissionContext
+              });
+              if (modeDecision.status === 'blocked') {
                 return {
                   ok: false,
-                  error: reason ? `Cannot set permission mode to auto: ${getAutoModeUnavailableNotification(reason)}` : 'Cannot set permission mode to auto'
+                  error: modeDecision.error
                 };
               }
               // Guards passed — apply via the centralized transition so
@@ -448,13 +439,9 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               setAppState(prev_12 => {
                 const current = prev_12.toolPermissionContext.mode;
                 if (current === mode) return prev_12;
-                const next = transitionPermissionMode(current, mode, prev_12.toolPermissionContext);
                 return {
                   ...prev_12,
-                  toolPermissionContext: {
-                    ...next,
-                    mode
-                  }
+                  toolPermissionContext: applyPermissionModeChange(prev_12.toolPermissionContext, mode)
                 };
               });
               // Recheck queued permission prompts now that mode changed.

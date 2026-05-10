@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  applyPermissionUpdatesToLiveContext,
   getDangerousPermissionModeTransitionError,
   getEffectiveDefaultPermissionModeFromSettingsSources,
 } from './permissionSetup.js'
@@ -118,5 +119,20 @@ describe('getDangerousPermissionModeTransitionError', () => {
     })
 
     expect(error).toBeUndefined()
+  })
+})
+
+describe('applyPermissionUpdatesToLiveContext', () => {
+  test('routes setMode updates through the live transition flow', () => {
+    const updated = applyPermissionUpdatesToLiveContext(
+      {
+        mode: 'plan',
+        prePlanMode: 'acceptEdits',
+      } as never,
+      [{ type: 'setMode', mode: 'default', destination: 'session' }],
+    )
+
+    expect(updated.mode).toBe('default')
+    expect(updated.prePlanMode).toBeUndefined()
   })
 })

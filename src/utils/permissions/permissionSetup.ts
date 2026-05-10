@@ -78,7 +78,10 @@ import {
   type AdditionalWorkingDirectory,
   applyPermissionUpdate,
 } from './PermissionUpdate.js'
-import type { PermissionUpdateDestination } from './PermissionUpdateSchema.js'
+import type {
+  PermissionUpdate,
+  PermissionUpdateDestination,
+} from './PermissionUpdateSchema.js'
 import {
   normalizeLegacyToolName,
   permissionRuleValueFromString,
@@ -647,6 +650,61 @@ export function transitionPermissionMode(
   }
 
   return context
+}
+
+/**
+ * Applies a permission update to the live session context.
+ *
+ * Unlike applyPermissionUpdate, this routes mode changes through the
+ * permission-mode transition state machine so plan/auto bookkeeping and
+ * dangerous-rule strip/restore side effects stay consistent across entrypoints.
+ */
+export function applyPermissionUpdateToLiveContext(
+  context: ToolPermissionContext,
+  update: PermissionUpdate,
+): ToolPermissionContext {
+  if (update.type !== 'setMode') {
+    return applyPermissionUpdate(context, update)
+  }
+
+  return applyPermissionModeChange(context, update.mode)
+}
+
+/**
+ * Applies permission updates to the live session context in order.
+ *
+ * Prefer this helper over applyPermissionUpdates anywhere updates can affect
+ * the active in-memory permission mode for the current session.
+ */
+export function applyPermissionUpdatesToLiveContext(
+  context: ToolPermissionContext,
+  updates: PermissionUpdate[],
+): ToolPermissionContext {
+  let updatedContext = context
+  for (const update of updates) {
+    updatedContext = applyPermissionUpdateToLiveContext(
+      updatedContext,
+      update,
+    )
+  }
+
+  return updatedContext
+}
+
+/**
+ * Applies a permission mode change to the live session context.
+ *
+ * Prefer this helper over calling transitionPermissionMode directly at
+ * call sites so the mode application path stays consistent.
+ */
+export function applyPermissionModeChange(
+  context: ToolPermissionContext,
+  mode: PermissionMode,
+): ToolPermissionContext {
+  return {
+    ...transitionPermissionMode(context.mode, mode, context),
+    mode,
+  }
 }
 
 /**
@@ -1442,11 +1500,96 @@ type DangerousPermissionModeTransitionValidationDeps = {
   shouldDisableBypassPermissions: typeof shouldDisableBypassPermissions
 }
 
+export type PermissionModeChangeRequestDecision =
+  | { status: 'apply' }
+  | {
+      status: 'confirm'
+      mode: Extract<PermissionMode, 'bypassPermissions' | 'fullAccess'>
+    }
+  | { status: 'blocked'; error: string }
+
 const DEFAULT_DANGEROUS_PERMISSION_MODE_TRANSITION_VALIDATION_DEPS: DangerousPermissionModeTransitionValidationDeps =
   {
     getStartupDangerousPermissionPromptState,
     shouldDisableBypassPermissions,
   }
+
+export async function getPermissionModeChangeRequestDecision({
+  mode,
+  toolPermissionContext,
+  allowDangerousModeConfirmation = false,
+  skipDangerousModePrompt = false,
+  requireLocalConfirmation,
+}: {
+  mode: PermissionMode
+  toolPermissionContext: Pick<
+    ToolPermissionContext,
+    'isBypassPermissionsModeAvailable'
+  >
+  allowDangerousModeConfirmation?: boolean
+  skipDangerousModePrompt?: boolean
+  requireLocalConfirmation?: boolean
+}): Promise<PermissionModeChangeRequestDecision> {
+  if (mode === 'bypassPermissions' || mode === 'fullAccess') {
+    const resolvedRequireLocalConfirmation =
+      requireLocalConfirmation ?? !allowDangerousModeConfirmation
+    const dangerousModeError = await getDangerousPermissionModeTransitionError({
+      mode,
+      toolPermissionContext,
+      requireLocalConfirmation: false,
+    })
+    if (dangerousModeError) {
+      return {
+        status: 'blocked',
+        error: dangerousModeError,
+      }
+    }
+
+    if (!skipDangerousModePrompt && allowDangerousModeConfirmation) {
+      const promptState = getStartupDangerousPermissionPromptState({
+        permissionMode: mode,
+        allowDangerouslySkipPermissions: false,
+      })
+      if (promptState.shouldShow && promptState.mode) {
+        return {
+          status: 'confirm',
+          mode: promptState.mode,
+        }
+      }
+    }
+
+    if (resolvedRequireLocalConfirmation) {
+      const localConfirmationError =
+        await getDangerousPermissionModeTransitionError({
+          mode,
+          toolPermissionContext,
+          requireLocalConfirmation: true,
+        })
+      if (localConfirmationError) {
+        return {
+          status: 'blocked',
+          error: localConfirmationError,
+        }
+      }
+    }
+
+    return { status: 'apply' }
+  }
+
+  if (feature('TRANSCRIPT_CLASSIFIER') && mode === 'auto') {
+    if (!isAutoModeGateEnabled()) {
+      const reason = getAutoModeUnavailableReason()
+      return {
+        status: 'blocked',
+        error: reason
+          ? `Cannot set permission mode to auto: ${getAutoModeUnavailableNotification(reason)}`
+          : 'Cannot set permission mode to auto',
+      }
+    }
+  }
+
+  return { status: 'apply' }
+}
 
 export async function getDangerousPermissionModeTransitionError({
   mode,

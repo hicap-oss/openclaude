@@ -33,11 +33,14 @@ import {
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import {
   applyPermissionUpdate,
-  applyPermissionUpdates,
   persistPermissionUpdates,
   supportsPersistence,
 } from '../../utils/permissions/PermissionUpdate.js'
-import { getDangerousPermissionModeTransitionError } from '../../utils/permissions/permissionSetup.js'
+import {
+  applyPermissionUpdateToLiveContext,
+  applyPermissionUpdatesToLiveContext,
+  getPermissionModeChangeRequestDecision,
+} from '../../utils/permissions/permissionSetup.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import {
   logPermissionDecision,
@@ -144,35 +147,36 @@ function createPermissionContext(
       const validatedUpdates: PermissionUpdate[] = []
       let nextContextForValidation = appState.toolPermissionContext
       for (const update of updates) {
-        if (
-          update.type === 'setMode' &&
-          (update.mode === 'bypassPermissions' || update.mode === 'fullAccess')
-        ) {
-          const dangerousModeError =
-            await getDangerousPermissionModeTransitionError({
-              mode: update.mode,
-              toolPermissionContext: nextContextForValidation,
-              requireLocalConfirmation: false,
-            })
-          if (dangerousModeError) {
+        if (update.type === 'setMode') {
+          const modeDecision = await getPermissionModeChangeRequestDecision({
+            mode: update.mode,
+            toolPermissionContext: nextContextForValidation,
+            requireLocalConfirmation: false,
+          })
+          if (modeDecision.status === 'blocked') {
             logForDebugging(
-              `Skipping dangerous permission update for ${update.mode}: ${dangerousModeError}`,
+              `Skipping permission mode update for ${update.mode}: ${modeDecision.error}`,
               { level: 'warn' },
             )
             continue
           }
         }
         validatedUpdates.push(update)
+        // Validation/staging must stay pure: defer live transition side effects
+        // until we actually commit the updates below.
         nextContextForValidation = applyPermissionUpdate(
           nextContextForValidation,
           update,
         )
       }
       if (validatedUpdates.length === 0) return false
-      persistPermissionUpdates(validatedUpdates)
-      setToolPermissionContext(
-        applyPermissionUpdates(appState.toolPermissionContext, validatedUpdates),
+      const latestAppState = toolUseContext.getAppState()
+      const updatedContext = applyPermissionUpdatesToLiveContext(
+        latestAppState.toolPermissionContext,
+        validatedUpdates,
       )
+      persistPermissionUpdates(validatedUpdates)
+      setToolPermissionContext(updatedContext)
       return validatedUpdates.some(update =>
         supportsPersistence(update.destination),
       )

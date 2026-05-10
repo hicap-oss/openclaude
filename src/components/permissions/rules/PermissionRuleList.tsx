@@ -18,18 +18,16 @@ import { type AutoModeDenial, getAutoModeDenials } from '../../../utils/autoMode
 import type { PermissionMode } from '../../../utils/permissions/PermissionMode.js';
 import { permissionModeTitle } from '../../../utils/permissions/PermissionMode.js';
 import type { PermissionBehavior, PermissionRule, PermissionRuleValue } from '../../../utils/permissions/PermissionRule.js';
-import { type DangerousPermissionMode } from '../../../utils/permissions/dangerousModePrompt.js';
-import { getStartupDangerousPermissionPromptState } from '../../../utils/permissions/dangerousModePromptRuntime.js';
 import { permissionRuleValueToString } from '../../../utils/permissions/permissionRuleParser.js';
-import { getAutoModeUnavailableNotification, getAutoModeUnavailableReason, getDangerousPermissionModeTransitionError, isAutoModeGateEnabled, isBypassPermissionsModeDisabled, transitionPermissionMode } from '../../../utils/permissions/permissionSetup.js';
+import { applyPermissionModeChange } from '../../../utils/permissions/permissionSetup.js';
 import { deletePermissionRule, getAllowRules, getAskRules, getDenyRules, permissionRuleSourceDisplayString } from '../../../utils/permissions/permissions.js';
 import type { UnreachableRule } from '../../../utils/permissions/shadowedRuleDetection.js';
 import { jsonStringify } from '../../../utils/slowOperations.js';
-import { BypassPermissionsModeDialog } from '../../BypassPermissionsModeDialog.js';
 import { Pane } from '../../design-system/Pane.js';
 import { Tab, Tabs, useTabHeaderFocus, useTabsWidth } from '../../design-system/Tabs.js';
 import { SearchBox } from '../../SearchBox.js';
 import type { Option } from '../../ui/option.js';
+import { usePermissionModeChangeRequest } from '../usePermissionModeChangeRequest.js';
 import { AddPermissionRules } from './AddPermissionRules.js';
 import { AddWorkspaceDirectory } from './AddWorkspaceDirectory.js';
 import { PermissionModeTab } from './PermissionModeTab.js';
@@ -534,10 +532,14 @@ export function PermissionRuleList(t0) {
   const [validatedRule, setValidatedRule] = useState(null);
   const [isAddingWorkspaceDirectory, setIsAddingWorkspaceDirectory] = useState(false);
   const [removingDirectory, setRemovingDirectory] = useState(null);
-  const [pendingDangerousMode, setPendingDangerousMode] = useState<DangerousPermissionMode | null>(null);
   const [modeMessage, setModeMessage] = useState<string | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [headerFocused, setHeaderFocused] = useState(true);
+  const {
+    dangerousModeDialog,
+    isConfirmingDangerousMode,
+    requestPermissionModeChange
+  } = usePermissionModeChangeRequest();
   let t5;
   if ($[4] === Symbol.for("react.memo_cache_sentinel")) {
     t5 = focused => {
@@ -655,7 +657,7 @@ export function PermissionRuleList(t0) {
   }
   const getRulesOptions = t6;
   const exitState = useExitOnCtrlCDWithKeybindings();
-  const isSearchModeActive = !selectedRule && !addingRuleToTab && !validatedRule && !isAddingWorkspaceDirectory && !removingDirectory && !pendingDangerousMode;
+  const isSearchModeActive = !selectedRule && !addingRuleToTab && !validatedRule && !isAddingWorkspaceDirectory && !removingDirectory && !isConfirmingDangerousMode;
   const t7 = isSearchModeActive && isSearchMode;
   let t8;
   if ($[15] === Symbol.for("react.memo_cache_sentinel")) {
@@ -803,99 +805,35 @@ export function PermissionRuleList(t0) {
     t17 = $[29];
   }
   const handleRequestRemoveDirectory = t17;
-  let t18;
-  if ($[113] !== onExit || $[114] !== setAppState || $[115] !== toolPermissionContext) {
-    t18 = async (mode_0: ManageablePermissionMode, options_0?: {
-      skipPrompt?: boolean;
-    }) => {
-      if (mode_0 === toolPermissionContext.mode) {
-        return;
-      }
-      setModeMessage(null);
-      if (mode_0 === "bypassPermissions" || mode_0 === "fullAccess") {
-        if (isBypassPermissionsModeDisabled() || !toolPermissionContext.isBypassPermissionsModeAvailable) {
-          setModeMessage(`Cannot set permission mode to ${permissionModeTitle(mode_0)}`);
-          return;
-        }
-        if (!options_0?.skipPrompt) {
-          const promptState = getStartupDangerousPermissionPromptState({
-            permissionMode: mode_0,
-            allowDangerouslySkipPermissions: false
-          });
-          if (promptState.shouldShow) {
-            setPendingDangerousMode(promptState.mode);
-            return;
+  const handleModeChange = useCallback(async (mode_0: ManageablePermissionMode, options_0?: {
+    skipPrompt?: boolean;
+  }) => {
+    if (mode_0 === toolPermissionContext.mode) {
+      return;
+    }
+    setModeMessage(null);
+    await requestPermissionModeChange({
+      mode: mode_0,
+      toolPermissionContext,
+      skipDangerousModePrompt: options_0?.skipPrompt,
+      onApply: () => {
+        setAppState(prev_0 => {
+          const currentMode = prev_0.toolPermissionContext.mode;
+          if (currentMode === mode_0) {
+            return prev_0;
           }
-        }
-        const dangerousModeError = await getDangerousPermissionModeTransitionError({
-          mode: mode_0,
-          toolPermissionContext,
-          requireLocalConfirmation: false
+          return {
+            ...prev_0,
+            toolPermissionContext: applyPermissionModeChange(prev_0.toolPermissionContext, mode_0)
+          };
         });
-        if (dangerousModeError) {
-          setModeMessage(dangerousModeError);
-          return;
-        }
+        setChanges(prev_1 => [...prev_1, `Set permission mode to ${chalk.bold(permissionModeTitle(mode_0))} for this session`]);
+      },
+      onBlocked: error => {
+        setModeMessage(error);
       }
-      if (feature('TRANSCRIPT_CLASSIFIER') && mode_0 === "auto" && !isAutoModeGateEnabled()) {
-        const reason = getAutoModeUnavailableReason();
-        setModeMessage(reason ? `Cannot set permission mode to auto: ${getAutoModeUnavailableNotification(reason)}` : "Cannot set permission mode to auto");
-        return;
-      }
-      setAppState(prev_0 => {
-        const currentMode = prev_0.toolPermissionContext.mode;
-        if (currentMode === mode_0) {
-          return prev_0;
-        }
-        const nextContext = transitionPermissionMode(currentMode, mode_0, prev_0.toolPermissionContext);
-        return {
-          ...prev_0,
-          toolPermissionContext: {
-            ...nextContext,
-            mode: mode_0
-          }
-        };
-      });
-      setChanges(prev_1 => [...prev_1, `Set permission mode to ${chalk.bold(permissionModeTitle(mode_0))} for this session`]);
-    };
-    $[113] = onExit;
-    $[114] = setAppState;
-    $[115] = toolPermissionContext;
-    $[116] = t18;
-  } else {
-    t18 = $[116];
-  }
-  const handleModeChange = t18;
-  let t19;
-  if ($[117] !== pendingDangerousMode) {
-    t19 = () => {
-      setPendingDangerousMode(null);
-    };
-    $[117] = pendingDangerousMode;
-    $[118] = t19;
-  } else {
-    t19 = $[118];
-  }
-  const handleDangerousModeDismiss = t19;
-  let t20;
-  if ($[119] !== handleModeChange || $[120] !== pendingDangerousMode) {
-    t20 = () => {
-      if (!pendingDangerousMode) {
-        return;
-      }
-      const acceptedMode = pendingDangerousMode;
-      setPendingDangerousMode(null);
-      void handleModeChange(acceptedMode, {
-        skipPrompt: true
-      });
-    };
-    $[119] = handleModeChange;
-    $[120] = pendingDangerousMode;
-    $[121] = t20;
-  } else {
-    t20 = $[121];
-  }
-  const handleDangerousModeAccept = t20;
+    });
+  }, [requestPermissionModeChange, setAppState, toolPermissionContext]);
   let tRulesCancel;
   if ($[122] !== changes || $[123] !== onExit || $[124] !== onRetryDenials) {
     tRulesCancel = () => {
@@ -1142,18 +1080,8 @@ export function PermissionRuleList(t0) {
     }
     return t25;
   }
-  if (pendingDangerousMode) {
-    let t22;
-    if ($[128] !== handleDangerousModeAccept || $[129] !== handleDangerousModeDismiss || $[130] !== pendingDangerousMode) {
-      t22 = <BypassPermissionsModeDialog mode={pendingDangerousMode} onAccept={handleDangerousModeAccept} onDecline={handleDangerousModeDismiss} onCancel={handleDangerousModeDismiss} />;
-      $[128] = handleDangerousModeAccept;
-      $[129] = handleDangerousModeDismiss;
-      $[130] = pendingDangerousMode;
-      $[131] = t22;
-    } else {
-      t22 = $[131];
-    }
-    return t22;
+  if (dangerousModeDialog) {
+    return dangerousModeDialog;
   }
   let t22;
   if ($[73] !== getRulesOptions || $[74] !== handleRulesCancel || $[75] !== handleToolSelect || $[76] !== isSearchMode || $[77] !== isTerminalFocused || $[78] !== lastFocusedRuleKey || $[79] !== searchCursorOffset || $[80] !== searchQuery) {

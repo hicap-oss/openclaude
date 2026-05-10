@@ -174,11 +174,8 @@ import {
   getFastModeState,
 } from 'src/utils/fastMode.js'
 import {
-  getDangerousPermissionModeTransitionError,
-  isAutoModeGateEnabled,
-  getAutoModeUnavailableNotification,
-  getAutoModeUnavailableReason,
-  transitionPermissionMode,
+  applyPermissionModeChange,
+  getPermissionModeChangeRequestDecision,
 } from 'src/utils/permissions/permissionSetup.js'
 import { permissionModeFromString } from 'src/utils/permissions/PermissionMode.js'
 import {
@@ -4574,40 +4571,17 @@ async function handleSetPermissionMode(
   toolPermissionContext: ToolPermissionContext,
   output: Stream<StdoutMessage>,
 ): Promise<ToolPermissionContext> {
-  // Check if trying to switch to a dangerous permission mode
-  if (request.mode === 'bypassPermissions' || request.mode === 'fullAccess') {
-    const dangerousModeError = await getDangerousPermissionModeTransitionError({
-      mode: request.mode,
-      toolPermissionContext,
-    })
-    if (dangerousModeError) {
-      output.enqueue({
-        type: 'control_response',
-        response: {
-          subtype: 'error',
-          request_id: requestId,
-          error: dangerousModeError,
-        },
-      })
-      return toolPermissionContext
-    }
-  }
-
-  // Check if trying to switch to auto mode without the classifier gate
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    request.mode === 'auto' &&
-    !isAutoModeGateEnabled()
-  ) {
-    const reason = getAutoModeUnavailableReason()
+  const modeDecision = await getPermissionModeChangeRequestDecision({
+    mode: request.mode,
+    toolPermissionContext,
+  })
+  if (modeDecision.status === 'blocked') {
     output.enqueue({
       type: 'control_response',
       response: {
         subtype: 'error',
         request_id: requestId,
-        error: reason
-          ? `Cannot set permission mode to auto: ${getAutoModeUnavailableNotification(reason)}`
-          : 'Cannot set permission mode to auto',
+        error: modeDecision.error,
       },
     })
     return toolPermissionContext
@@ -4625,14 +4599,7 @@ async function handleSetPermissionMode(
     },
   })
 
-  return {
-    ...transitionPermissionMode(
-      toolPermissionContext.mode,
-      request.mode,
-      toolPermissionContext,
-    ),
-    mode: request.mode,
-  }
+  return applyPermissionModeChange(toolPermissionContext, request.mode)
 }
 
 async function sanitizeResumedExternalMetadata(
@@ -4648,16 +4615,16 @@ async function sanitizeResumedExternalMetadata(
     return metadata
   }
 
-  const dangerousModeError = await getDangerousPermissionModeTransitionError({
+  const modeDecision = await getPermissionModeChangeRequestDecision({
     mode: resumedMode,
     toolPermissionContext,
   })
-  if (!dangerousModeError) {
+  if (modeDecision.status !== 'blocked') {
     return metadata
   }
 
   logForDebugging(
-    `Discarding resumed dangerous permission mode ${resumedMode}: ${dangerousModeError}`,
+    `Discarding resumed dangerous permission mode ${resumedMode}: ${modeDecision.error}`,
     { level: 'warn' },
   )
   notifySessionMetadataChanged({ permission_mode: 'default' })
