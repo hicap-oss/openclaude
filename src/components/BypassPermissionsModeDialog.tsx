@@ -1,7 +1,7 @@
 import React from 'react'
 import { PRODUCT_DISPLAY_NAME } from '../constants/product.js'
 import { logEvent } from 'src/services/analytics/index.js'
-import { Box, Link, Newline, Text } from '../ink.js'
+import { Box, Newline, Text } from '../ink.js'
 import { gracefulShutdownSync } from '../utils/gracefulShutdown.js'
 import {
   type PermissionMode,
@@ -76,7 +76,6 @@ export function BypassPermissionsModeDialog({
           By proceeding, you accept all responsibility for actions taken while
           running in {modeTitle} mode.
         </Text>
-        <Link url="https://code.claude.com/docs/en/security" />
       </Box>
       <Select
         options={[
