@@ -63,13 +63,26 @@
  * object is reachable via multiple keys — are handled correctly and do not
  * throw.
  */
-export function stableStringify(value: unknown, space?: number): string {
+export function stableStringify(
+  value: unknown,
+  space?: number,
+): string | undefined {
   // Pretty printing is used only in tests/debug helpers. Keep it on the
   // native JSON.stringify path so spacing behavior stays exactly native.
   if (space !== undefined && space >= 1) {
     return JSON.stringify(deepSort(value, new WeakSet(), ''), null, space)
   }
-  return stringifyStable(value, new WeakSet(), '') as string
+  return stringifyStable(value, new WeakSet(), '')
+}
+
+export function stableStringifyJson(value: unknown, space?: number): string {
+  const serialized = stableStringify(value, space)
+  if (serialized === undefined) {
+    throw new TypeError(
+      'stableStringifyJson cannot serialize a top-level undefined, function, or symbol value',
+    )
+  }
+  return serialized
 }
 
 /**
