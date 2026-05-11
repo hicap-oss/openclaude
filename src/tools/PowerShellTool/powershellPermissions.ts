@@ -4,6 +4,7 @@
  */
 
 import { resolve } from 'path'
+import { getOriginalCwd } from '../../bootstrap/state.js'
 import type { ToolPermissionContext, ToolUseContext } from '../../Tool.js'
 import type {
   PermissionDecisionReason,
@@ -95,7 +96,9 @@ export function isUnsafeDotGitWritePathForPowerShell(
   if (
     (toolPermissionContext.mode === 'bypassPermissions' ||
       toolPermissionContext.mode === 'fullAccess') &&
-    isOpenClaudeCommitMessagePath(resolve(getCwd(), path))
+    // Keep this aligned with the shared filesystem permission exception:
+    // /commit's temp file is scoped to the project root .git directory.
+    isOpenClaudeCommitMessagePath(resolve(getOriginalCwd(), path))
   ) {
     return false
   }
