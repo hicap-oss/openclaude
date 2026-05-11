@@ -159,11 +159,12 @@ describe('stableStringify — spacing', () => {
     )
   })
 
-  test('zero, negative, and NaN space values keep compact output', () => {
+  test('compact-equivalent numeric space values keep compact output', () => {
     const input = { z: 1, a: 2 }
     const compact = '{"a":2,"z":1}'
 
     expect(stableStringify(input, 0)).toBe(compact)
+    expect(stableStringify(input, 0.5)).toBe(compact)
     expect(stableStringify(input, -1)).toBe(compact)
     expect(stableStringify(input, Number.NaN)).toBe(compact)
   })
