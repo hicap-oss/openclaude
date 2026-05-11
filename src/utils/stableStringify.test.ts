@@ -144,6 +144,31 @@ describe('stableStringify — primitive wrapper unboxing', () => {
   })
 })
 
+describe('stableStringify — spacing', () => {
+  test('positive space uses pretty-printed sorted output', () => {
+    expect(stableStringify({ z: 1, a: { y: 2, x: 3 } }, 2)).toBe(
+      [
+        '{',
+        '  "a": {',
+        '    "x": 3,',
+        '    "y": 2',
+        '  },',
+        '  "z": 1',
+        '}',
+      ].join('\n'),
+    )
+  })
+
+  test('zero, negative, and NaN space values keep compact output', () => {
+    const input = { z: 1, a: 2 }
+    const compact = '{"a":2,"z":1}'
+
+    expect(stableStringify(input, 0)).toBe(compact)
+    expect(stableStringify(input, -1)).toBe(compact)
+    expect(stableStringify(input, Number.NaN)).toBe(compact)
+  })
+})
+
 describe('stableStringify — cycles vs DAGs', () => {
   test('top-level cycle throws TypeError (regression guard)', () => {
     const obj: Record<string, unknown> = { a: 1 }

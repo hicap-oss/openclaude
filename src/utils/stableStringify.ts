@@ -66,7 +66,7 @@
 export function stableStringify(value: unknown, space?: number): string {
   // Pretty printing is used only in tests/debug helpers. Keep it on the
   // native JSON.stringify path so spacing behavior stays exactly native.
-  if (space !== undefined && space !== 0) {
+  if (Number.isFinite(space) && space > 0) {
     return JSON.stringify(deepSort(value, new WeakSet(), ''), null, space)
   }
   return stringifyStable(value, new WeakSet(), '') as string
