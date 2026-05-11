@@ -1,4 +1,5 @@
 import React from 'react'
+import { PRODUCT_DISPLAY_NAME } from '../constants/product.js'
 import { logEvent } from 'src/services/analytics/index.js'
 import { Box, Link, Newline, Text } from '../ink.js'
 import { gracefulShutdownSync } from '../utils/gracefulShutdown.js'
@@ -59,13 +60,13 @@ export function BypassPermissionsModeDialog({
 
   return (
     <Dialog
-      title={`WARNING: Claude Code running in ${modeTitle} mode`}
+      title={`WARNING: ${PRODUCT_DISPLAY_NAME} running in ${modeTitle} mode`}
       color="error"
       onCancel={handleEscape}
     >
       <Box flexDirection="column" gap={1}>
         <Text>
-          In {modeTitle} mode, Claude Code will not ask for your approval
+          In {modeTitle} mode, {PRODUCT_DISPLAY_NAME} will not ask for your approval
           before running potentially dangerous commands.
           <Newline />
           This mode should only be used in a sandboxed container/VM that has

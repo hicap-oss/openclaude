@@ -1,4 +1,5 @@
 import React, { type ReactNode, useMemo, useState } from 'react'
+import { PRODUCT_DISPLAY_NAME } from '../../constants/product.js'
 import { Box, Text } from '../../ink.js'
 import type { KeybindingAction } from '../../keybindings/types.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
@@ -46,8 +47,8 @@ type PermissionPromptProps<T extends string> = Pick<
 }
 
 const DEFAULT_PLACEHOLDERS: Record<FeedbackType, string> = {
-  accept: 'tell OpenClaude what to do next',
-  reject: 'tell OpenClaude what to do differently',
+  accept: `tell ${PRODUCT_DISPLAY_NAME} what to do next`,
+  reject: `tell ${PRODUCT_DISPLAY_NAME} what to do differently`,
 }
 
 const DEFAULT_UNARY_EVENT: UnaryEvent = {
