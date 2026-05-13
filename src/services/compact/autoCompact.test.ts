@@ -107,8 +107,11 @@ describe('getEffectiveContextWindowSize', () => {
 
     try {
       // MiniMax's recommended Anthropic-compatible endpoint supports the full
-      // M2 window. Compact reserves at most 20k summary output tokens.
-      expect(getEffectiveContextWindowSize('MiniMax-M2.7')).toBe(184_800)
+      // M2 window. Compact reserves either the default 20k summary output
+      // tokens or 8k when the slot-reservation cap flag is enabled.
+      expect([184_800, 196_800]).toContain(
+        getEffectiveContextWindowSize('MiniMax-M2.7'),
+      )
     } finally {
       restoreEnv()
     }
