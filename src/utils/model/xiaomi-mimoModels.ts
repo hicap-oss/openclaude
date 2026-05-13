@@ -11,7 +11,7 @@ export function isXiaomiMimoProvider(): boolean {
     return true
   }
   const baseUrl = process.env.OPENAI_BASE_URL ?? ''
-  if (baseUrl.includes('xiaomimimo')) {
+  if (baseUrl.includes('xiaomimimo') || baseUrl.includes('mimo-v2')) {
     return true
   }
   return getAPIProvider() === 'xiaomi-mimo'

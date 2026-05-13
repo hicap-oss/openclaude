@@ -22,6 +22,7 @@ import { getErrnoCode } from './errors.js'
 import {
   getRouteDefaultBaseUrl,
   getRouteDefaultModel,
+  normalizeXiaomiMimoBaseUrl,
 } from '../integrations/routeMetadata.js'
 import {
   maskSecretForDisplay,
@@ -448,8 +449,12 @@ export function buildMiniMaxProfileEnv(options: {
 
   return {
     OPENAI_BASE_URL:
-      sanitizeProviderConfigValue(options.baseUrl, secretSource) ||
-      sanitizeProviderConfigValue(processEnv.OPENAI_BASE_URL, secretSource) ||
+      normalizeXiaomiMimoBaseUrl(
+        sanitizeProviderConfigValue(options.baseUrl, secretSource),
+      ) ||
+      normalizeXiaomiMimoBaseUrl(
+        sanitizeProviderConfigValue(processEnv.OPENAI_BASE_URL, secretSource),
+      ) ||
       defaultBaseUrl,
     OPENAI_MODEL:
       normalizeProfileModel(

@@ -79,6 +79,7 @@ test('Xiaomi MiMo route metadata uses official OpenAI-compatible defaults', () =
   expect(getRouteDefaultModel('xiaomi-mimo')).toBe('mimo-v2.5-pro')
   expect(resolveRouteIdFromBaseUrl('https://api.xiaomimimo.com/v1')).toBe('xiaomi-mimo')
   expect(resolveRouteIdFromBaseUrl('https://api.xiaomimimo.com/v1/chat/completions')).toBe('xiaomi-mimo')
+  expect(resolveRouteIdFromBaseUrl('https://api.mimo-v2.com/v1')).toBe('xiaomi-mimo')
 })
 
 test('resolveActiveRouteIdFromEnv treats Xiaomi MiMo credential-only env as Xiaomi MiMo', () => {

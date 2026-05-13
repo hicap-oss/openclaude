@@ -1,4 +1,40 @@
-import { defineVendor } from '../define.js'
+import { defineCatalog, defineVendor } from '../define.js'
+
+const catalog = defineCatalog({
+  source: 'static',
+  models: [
+    {
+      id: 'mimo-v2.5-pro',
+      apiName: 'mimo-v2.5-pro',
+      label: 'MiMo V2.5 Pro',
+      modelDescriptorId: 'mimo-v2.5-pro',
+    },
+    {
+      id: 'mimo-v2-pro',
+      apiName: 'mimo-v2-pro',
+      label: 'MiMo V2 Pro',
+      modelDescriptorId: 'mimo-v2-pro',
+    },
+    {
+      id: 'mimo-v2.5',
+      apiName: 'mimo-v2.5',
+      label: 'MiMo V2.5',
+      modelDescriptorId: 'mimo-v2.5',
+    },
+    {
+      id: 'mimo-v2-omni',
+      apiName: 'mimo-v2-omni',
+      label: 'MiMo V2 Omni',
+      modelDescriptorId: 'mimo-v2-omni',
+    },
+    {
+      id: 'mimo-v2-flash',
+      apiName: 'mimo-v2-flash',
+      label: 'MiMo V2 Flash',
+      modelDescriptorId: 'mimo-v2-flash',
+    },
+  ],
+})
 
 export default defineVendor({
   id: 'xiaomi-mimo',
@@ -33,52 +69,18 @@ export default defineVendor({
     label: 'Xiaomi MiMo',
     name: 'Xiaomi MiMo',
     apiKeyEnvVars: ['MIMO_API_KEY'],
-    modelEnvVars: ['MIMO_MODEL', 'OPENAI_MODEL'],
+    modelEnvVars: ['OPENAI_MODEL'],
   },
   validation: {
     kind: 'credential-env',
     routing: {
       matchDefaultBaseUrl: true,
-      matchBaseUrlHosts: ['api.xiaomimimo.com'],
+      matchBaseUrlHosts: ['api.xiaomimimo.com', 'api.mimo-v2.com'],
     },
     credentialEnvVars: ['MIMO_API_KEY', 'OPENAI_API_KEY'],
     missingCredentialMessage:
       'Xiaomi MiMo auth is required. Set MIMO_API_KEY or OPENAI_API_KEY.',
   },
-  catalog: {
-    source: 'static',
-    models: [
-      {
-        id: 'mimo-v2.5-pro',
-        apiName: 'mimo-v2.5-pro',
-        label: 'MiMo V2.5 Pro',
-        modelDescriptorId: 'mimo-v2.5-pro',
-      },
-      {
-        id: 'mimo-v2-pro',
-        apiName: 'mimo-v2-pro',
-        label: 'MiMo V2 Pro',
-        modelDescriptorId: 'mimo-v2-pro',
-      },
-      {
-        id: 'mimo-v2.5',
-        apiName: 'mimo-v2.5',
-        label: 'MiMo V2.5',
-        modelDescriptorId: 'mimo-v2.5',
-      },
-      {
-        id: 'mimo-v2-omni',
-        apiName: 'mimo-v2-omni',
-        label: 'MiMo V2 Omni',
-        modelDescriptorId: 'mimo-v2-omni',
-      },
-      {
-        id: 'mimo-v2-flash',
-        apiName: 'mimo-v2-flash',
-        label: 'MiMo V2 Flash',
-        modelDescriptorId: 'mimo-v2-flash',
-      },
-    ],
-  },
+  catalog,
   usage: { supported: false },
 })

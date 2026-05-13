@@ -28,6 +28,10 @@ const TRANSPORT_KIND_PROVIDER_TYPE_LABELS: Partial<
   'openai-compatible': 'OpenAI-compatible API',
 }
 
+const XIAOMI_MIMO_PRIMARY_HOST = 'api.xiaomimimo.com'
+const XIAOMI_MIMO_STALE_DOCS_HOST = 'api.mimo-v2.com'
+export const XIAOMI_MIMO_PRIMARY_BASE_URL = `https://${XIAOMI_MIMO_PRIMARY_HOST}/v1`
+
 function getValidationRoutingHosts(
   descriptor: RouteDescriptor,
 ): string[] {
@@ -210,10 +214,34 @@ export function isXiaomiMimoBaseUrl(value: string | undefined): boolean {
   }
 
   try {
-    return new URL(trimmed).hostname.toLowerCase() === 'api.xiaomimimo.com'
+    const hostname = new URL(trimmed).hostname.toLowerCase()
+    return (
+      hostname === XIAOMI_MIMO_PRIMARY_HOST ||
+      hostname === XIAOMI_MIMO_STALE_DOCS_HOST
+    )
   } catch {
     return false
   }
+}
+
+export function normalizeXiaomiMimoBaseUrl(
+  value: string | undefined,
+): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  try {
+    const hostname = new URL(trimmed).hostname.toLowerCase()
+    if (hostname === XIAOMI_MIMO_STALE_DOCS_HOST) {
+      return XIAOMI_MIMO_PRIMARY_BASE_URL
+    }
+  } catch {
+    return trimmed
+  }
+
+  return trimmed
 }
 
 export function getXiaomiMimoBaseUrlOverride(
@@ -221,12 +249,12 @@ export function getXiaomiMimoBaseUrlOverride(
 ): string | undefined {
   const openAIBaseUrl = processEnv.OPENAI_BASE_URL?.trim()
   if (isXiaomiMimoBaseUrl(openAIBaseUrl)) {
-    return openAIBaseUrl
+    return normalizeXiaomiMimoBaseUrl(openAIBaseUrl)
   }
 
   const openAIApiBase = processEnv.OPENAI_API_BASE?.trim()
   if (isXiaomiMimoBaseUrl(openAIApiBase)) {
-    return openAIApiBase
+    return normalizeXiaomiMimoBaseUrl(openAIApiBase)
   }
 
   return undefined

@@ -333,7 +333,6 @@ export const PROVIDER_PRESET_MANIFEST = [
       "MIMO_API_KEY"
     ],
     "modelEnvVars": [
-      "MIMO_MODEL",
       "OPENAI_MODEL"
     ]
   },

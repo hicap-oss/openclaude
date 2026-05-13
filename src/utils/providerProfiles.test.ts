@@ -524,6 +524,21 @@ describe('applyProviderProfileToProcessEnv', () => {
     expect(getFreshAPIProvider()).toBe('xiaomi-mimo')
   })
 
+  test('xiaomi mimo profile normalizes stale docs endpoint to resolving API host', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+
+    applyProviderProfileToProcessEnv(buildXiaomiMimoProfile({
+      baseUrl: 'https://api.mimo-v2.com/v1',
+    }))
+    const { getAPIProvider: getFreshAPIProvider } =
+      await importFreshProvidersModule()
+
+    expect(process.env.OPENAI_BASE_URL).toBe('https://api.xiaomimimo.com/v1')
+    expect(process.env.MIMO_API_KEY).toBe('mimo-test-key')
+    expect(getFreshAPIProvider()).toBe('xiaomi-mimo')
+  })
+
   test('legacy OpenAI profile on restricted route ignores advanced settings', async () => {
     const { applyProviderProfileToProcessEnv } =
       await importFreshProviderProfileModules()
