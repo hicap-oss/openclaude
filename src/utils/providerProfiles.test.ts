@@ -452,7 +452,7 @@ describe('applyProviderProfileToProcessEnv', () => {
     applyProviderProfileToProcessEnv(
       buildProfile({
         provider: 'minimax',
-        baseUrl: 'https://api.minimax.io/v1',
+        baseUrl: 'https://api.minimax.io/anthropic',
         model: 'MiniMax-M2.7',
         apiKey: 'minimax-live-key',
         apiFormat: 'responses',
@@ -465,10 +465,11 @@ describe('applyProviderProfileToProcessEnv', () => {
       }),
     )
 
-    expect(process.env.OPENAI_BASE_URL).toBe('https://api.minimax.io/v1')
-    expect(process.env.OPENAI_MODEL).toBe('MiniMax-M2.7')
-    expect(process.env.OPENAI_API_KEY).toBe('minimax-live-key')
+    expect(process.env.ANTHROPIC_BASE_URL).toBe('https://api.minimax.io/anthropic')
+    expect(process.env.ANTHROPIC_MODEL).toBe('MiniMax-M2.7')
+    expect(process.env.ANTHROPIC_API_KEY).toBe('minimax-live-key')
     expect(process.env.MINIMAX_API_KEY).toBe('minimax-live-key')
+    expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
     expect(process.env.OPENAI_API_FORMAT).toBeUndefined()
     expect(process.env.OPENAI_AUTH_HEADER).toBeUndefined()
     expect(process.env.OPENAI_AUTH_SCHEME).toBeUndefined()
@@ -1079,7 +1080,7 @@ describe('getProviderPresetDefaults', () => {
 
     expect(defaults.provider).toBe('minimax')
     expect(defaults.name).toBe('MiniMax')
-    expect(defaults.baseUrl).toBe('https://api.minimax.io/v1')
+    expect(defaults.baseUrl).toBe('https://api.minimax.io/anthropic')
     expect(defaults.model).toBe('MiniMax-M2.7')
     expect(defaults.requiresApiKey).toBe(true)
   })

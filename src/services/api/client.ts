@@ -35,7 +35,6 @@ import {
   isEnvTruthy,
 } from '../../utils/envUtils.js'
 import {
-  getMiniMaxBaseUrlOverride,
   getRouteDefaultBaseUrl,
   getRouteDefaultModel,
   getXaiBaseUrlOverride,
@@ -124,19 +123,16 @@ function isXaiModelName(value: string | undefined): boolean {
 }
 
 function applyMiniMaxEnvOnlyDefaults(): void {
-  const baseUrlOverride = getMiniMaxBaseUrlOverride()
-  const hasMiniMaxBaseOverride = baseUrlOverride !== undefined
   const modelOverride = process.env.OPENAI_MODEL?.trim() || undefined
 
-  process.env.CLAUDE_CODE_USE_OPENAI = '1'
-  process.env.OPENAI_BASE_URL =
-    baseUrlOverride ?? getRouteDefaultBaseUrl('minimax')
-  process.env.OPENAI_MODEL =
-    (hasMiniMaxBaseOverride || isMiniMaxModelName(modelOverride)
+  process.env.ANTHROPIC_BASE_URL = 'https://api.minimax.io/anthropic'
+  process.env.ANTHROPIC_API_KEY = process.env.MINIMAX_API_KEY
+  process.env.ANTHROPIC_MODEL =
+    (isMiniMaxModelName(modelOverride)
       ? modelOverride
       : undefined) ??
     getRouteDefaultModel('minimax')
-  process.env.OPENAI_API_KEY = process.env.MINIMAX_API_KEY
+  delete process.env.CLAUDE_CODE_USE_OPENAI
   delete process.env.OPENAI_API_FORMAT
   delete process.env.OPENAI_AUTH_HEADER
   delete process.env.OPENAI_AUTH_SCHEME
@@ -216,8 +212,21 @@ export async function getAnthropicClient({
     defaultHeaders['x-anthropic-additional-protection'] = 'true'
   }
 
+  const envOnlyProviderRouteId = resolveEnvOnlyProviderRouteId(process.env)
+  const useXaiEnvOnlyProvider = envOnlyProviderRouteId === 'xai'
+  const useMiniMaxEnvOnlyProvider = envOnlyProviderRouteId === 'minimax'
+  if (useMiniMaxEnvOnlyProvider) {
+    applyMiniMaxEnvOnlyDefaults()
+  }
+  if (useXaiEnvOnlyProvider) {
+    applyXaiEnvOnlyDefaults()
+  }
+
   const shouldUseFirstPartyAuth =
     shouldUseFirstPartyAnthropicAuth(providerOverride)
+  const useMiniMaxNativeProvider =
+    getAPIProvider() === 'minimax' &&
+    !isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)
 
   if (shouldUseFirstPartyAuth) {
     logForDebugging('[API:auth] OAuth token check starting')
@@ -284,18 +293,7 @@ export async function getAnthropicClient({
     }
     return new Anthropic(nativeArgs)
   }
-  const envOnlyProviderRouteId = resolveEnvOnlyProviderRouteId(process.env)
-  const useXaiEnvOnlyProvider = envOnlyProviderRouteId === 'xai'
-  const useMiniMaxEnvOnlyProvider = envOnlyProviderRouteId === 'minimax'
-  if (useMiniMaxEnvOnlyProvider) {
-    applyMiniMaxEnvOnlyDefaults()
-  }
-  if (useXaiEnvOnlyProvider) {
-    applyXaiEnvOnlyDefaults()
-  }
-
   if (
-    useMiniMaxEnvOnlyProvider ||
     useXaiEnvOnlyProvider ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI) ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB) ||
@@ -465,7 +463,11 @@ export async function getAnthropicClient({
 
   // Determine authentication method based on available tokens
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-    apiKey: isClaudeAiSubscriber ? null : apiKey || getAnthropicApiKey(),
+    apiKey: isClaudeAiSubscriber
+      ? null
+      : useMiniMaxNativeProvider
+        ? process.env.MINIMAX_API_KEY || process.env.ANTHROPIC_API_KEY
+        : apiKey || getAnthropicApiKey(),
     authToken: isClaudeAiSubscriber
       ? getClaudeAIOAuthTokens()?.accessToken
       : undefined,
@@ -473,7 +475,9 @@ export async function getAnthropicClient({
     ...(process.env.USER_TYPE === 'ant' &&
     isEnvTruthy(process.env.USE_STAGING_OAUTH)
       ? { baseURL: getOauthConfig().BASE_API_URL }
-      : {}),
+      : process.env.ANTHROPIC_BASE_URL
+        ? { baseURL: process.env.ANTHROPIC_BASE_URL }
+        : {}),
     ...ARGS,
     ...(isDebugToStdErr() && { logger: createStderrLogger() }),
   }

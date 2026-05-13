@@ -38,6 +38,7 @@ const originalEnv = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
   ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+  ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
   ANTHROPIC_CUSTOM_HEADERS: process.env.ANTHROPIC_CUSTOM_HEADERS,
 }
 
@@ -75,6 +76,7 @@ beforeEach(() => {
   delete process.env.NVIDIA_NIM
   delete process.env.ANTHROPIC_API_KEY
   delete process.env.ANTHROPIC_AUTH_TOKEN
+  delete process.env.ANTHROPIC_MODEL
   delete process.env.ANTHROPIC_CUSTOM_HEADERS
 })
 
@@ -104,6 +106,7 @@ afterEach(() => {
   restoreEnv('ANTHROPIC_API_KEY', originalEnv.ANTHROPIC_API_KEY)
   restoreEnv('ANTHROPIC_AUTH_TOKEN', originalEnv.ANTHROPIC_AUTH_TOKEN)
   restoreEnv('ANTHROPIC_BASE_URL', originalEnv.ANTHROPIC_BASE_URL)
+  restoreEnv('ANTHROPIC_MODEL', originalEnv.ANTHROPIC_MODEL)
   restoreEnv('ANTHROPIC_CUSTOM_HEADERS', originalEnv.ANTHROPIC_CUSTOM_HEADERS)
   globalThis.fetch = originalFetch
 })
@@ -240,7 +243,7 @@ test('routes Gemini provider requests through the OpenAI-compatible shim', async
   })
 })
 
-test('routes env-only MiniMax requests through the OpenAI-compatible shim', async () => {
+test('routes env-only MiniMax requests through the Anthropic-compatible API', async () => {
   let capturedUrl: string | undefined
   let capturedHeaders: Headers | undefined
   let capturedBody: Record<string, unknown> | undefined
@@ -264,22 +267,18 @@ test('routes env-only MiniMax requests through the OpenAI-compatible shim', asyn
 
     return new Response(
       JSON.stringify({
-        id: 'chatcmpl-minimax',
+        id: 'msg-minimax',
+        type: 'message',
+        role: 'assistant',
         model: 'MiniMax-M2.5',
-        choices: [
-          {
-            message: {
-              role: 'assistant',
-              content: 'minimax ok',
-            },
-            finish_reason: 'stop',
-          },
-        ],
+        content: [{ type: 'text', text: 'minimax ok' }],
         usage: {
-          prompt_tokens: 8,
-          completion_tokens: 3,
-          total_tokens: 11,
+          input_tokens: 8,
+          output_tokens: 3,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
         },
+        stop_reason: 'end_turn',
       }),
       {
         headers: {
@@ -302,16 +301,19 @@ test('routes env-only MiniMax requests through the OpenAI-compatible shim', asyn
     stream: false,
   })
 
-  expect(capturedUrl).toBe('https://api.minimax.io/v1/chat/completions')
-  expect(capturedHeaders?.get('authorization')).toBe('Bearer minimax-test-key')
+  expect(capturedUrl).toBe('https://api.minimax.io/anthropic/v1/messages?beta=true')
+  expect(capturedHeaders?.get('x-api-key')).toBe('minimax-test-key')
   expect(capturedBody?.model).toBe('MiniMax-M2.5')
+  expect(process.env.ANTHROPIC_BASE_URL).toBe('https://api.minimax.io/anthropic')
+  expect(process.env.ANTHROPIC_API_KEY).toBe('minimax-test-key')
+  expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
   expect(response).toMatchObject({
     role: 'assistant',
     model: 'MiniMax-M2.5',
   })
 })
 
-test('env-only MiniMax fallback preserves OpenAI-shaped model and base overrides', async () => {
+test('env-only MiniMax fallback preserves legacy OPENAI_MODEL as Anthropic model', async () => {
   let capturedUrl: string | undefined
   let capturedBody: Record<string, unknown> | undefined
 
@@ -321,7 +323,6 @@ test('env-only MiniMax fallback preserves OpenAI-shaped model and base overrides
   delete process.env.GEMINI_BASE_URL
   delete process.env.GEMINI_AUTH_MODE
   process.env.MINIMAX_API_KEY = 'minimax-test-key'
-  process.env.OPENAI_BASE_URL = 'https://api.minimax.chat/v1'
   process.env.OPENAI_MODEL = 'MiniMax-M2.7-highspeed'
 
   globalThis.fetch = (async (input, init) => {
@@ -335,15 +336,13 @@ test('env-only MiniMax fallback preserves OpenAI-shaped model and base overrides
 
     return new Response(
       JSON.stringify({
-        id: 'chatcmpl-minimax-override',
+        id: 'msg-minimax-override',
+        type: 'message',
+        role: 'assistant',
         model: 'MiniMax-M2.7-highspeed',
-        choices: [
-          {
-            message: { role: 'assistant', content: 'minimax override ok' },
-            finish_reason: 'stop',
-          },
-        ],
-        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+        content: [{ type: 'text', text: 'minimax override ok' }],
+        usage: { input_tokens: 8, output_tokens: 3, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+        stop_reason: 'end_turn',
       }),
       { headers: { 'Content-Type': 'application/json' } },
     )
@@ -362,84 +361,12 @@ test('env-only MiniMax fallback preserves OpenAI-shaped model and base overrides
     stream: false,
   })
 
-  expect(capturedUrl).toBe('https://api.minimax.chat/v1/chat/completions')
+  expect(capturedUrl).toBe('https://api.minimax.io/anthropic/v1/messages?beta=true')
   expect(capturedBody?.model).toBe('MiniMax-M2.7-highspeed')
-  expect(process.env.OPENAI_API_KEY).toBe('minimax-test-key')
+  expect(process.env.ANTHROPIC_MODEL).toBe('MiniMax-M2.7-highspeed')
 })
 
-test('env-only MiniMax fallback ignores stale OPENAI_API_BASE when primary base matches', async () => {
-  delete process.env.CLAUDE_CODE_USE_GEMINI
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_MODEL
-  delete process.env.GEMINI_BASE_URL
-  delete process.env.GEMINI_AUTH_MODE
-  process.env.MINIMAX_API_KEY = 'minimax-test-key'
-  process.env.OPENAI_BASE_URL = 'https://api.minimax.chat/v1'
-  process.env.OPENAI_API_BASE = 'https://api.openai.com/v1'
-
-  await getAnthropicClient({
-    maxRetries: 0,
-    model: 'MiniMax-M2.7',
-  })
-
-  expect(process.env.CLAUDE_CODE_USE_OPENAI).toBe('1')
-  expect(process.env.OPENAI_BASE_URL).toBe('https://api.minimax.chat/v1')
-  expect(process.env.OPENAI_API_KEY).toBe('minimax-test-key')
-})
-
-test('env-only MiniMax fallback preserves OPENAI_API_BASE host overrides', async () => {
-  let capturedUrl: string | undefined
-
-  delete process.env.CLAUDE_CODE_USE_GEMINI
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_MODEL
-  delete process.env.GEMINI_BASE_URL
-  delete process.env.GEMINI_AUTH_MODE
-  process.env.MINIMAX_API_KEY = 'minimax-test-key'
-  process.env.OPENAI_API_BASE = 'https://api.minimax.chat/v1'
-
-  globalThis.fetch = (async (input) => {
-    capturedUrl =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url
-
-    return new Response(
-      JSON.stringify({
-        id: 'chatcmpl-minimax-api-base',
-        model: 'MiniMax-M2.7',
-        choices: [
-          {
-            message: { role: 'assistant', content: 'minimax api base ok' },
-            finish_reason: 'stop',
-          },
-        ],
-        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
-      }),
-      { headers: { 'Content-Type': 'application/json' } },
-    )
-  }) as FetchType
-
-  const client = (await getAnthropicClient({
-    maxRetries: 0,
-    model: 'MiniMax-M2.7',
-  })) as unknown as ShimClient
-
-  await client.beta.messages.create({
-    model: 'MiniMax-M2.7',
-    system: 'test system',
-    messages: [{ role: 'user', content: 'hello' }],
-    max_tokens: 64,
-    stream: false,
-  })
-
-  expect(capturedUrl).toBe('https://api.minimax.chat/v1/chat/completions')
-  expect(process.env.OPENAI_BASE_URL).toBe('https://api.minimax.chat/v1')
-})
-
-test('env-only MiniMax fallback drops unsupported OpenAI shim options', async () => {
+test('env-only MiniMax fallback drops stale OpenAI shim options', async () => {
   let capturedUrl: string | undefined
   let capturedHeaders: Headers | undefined
 
@@ -465,15 +392,13 @@ test('env-only MiniMax fallback drops unsupported OpenAI shim options', async ()
 
     return new Response(
       JSON.stringify({
-        id: 'chatcmpl-minimax-clean',
+        id: 'msg-minimax-clean',
+        type: 'message',
+        role: 'assistant',
         model: 'MiniMax-M2.7',
-        choices: [
-          {
-            message: { role: 'assistant', content: 'minimax clean ok' },
-            finish_reason: 'stop',
-          },
-        ],
-        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+        content: [{ type: 'text', text: 'minimax clean ok' }],
+        usage: { input_tokens: 8, output_tokens: 3, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+        stop_reason: 'end_turn',
       }),
       { headers: { 'Content-Type': 'application/json' } },
     )
@@ -492,8 +417,8 @@ test('env-only MiniMax fallback drops unsupported OpenAI shim options', async ()
     stream: false,
   })
 
-  expect(capturedUrl).toBe('https://api.minimax.io/v1/chat/completions')
-  expect(capturedHeaders?.get('authorization')).toBe('Bearer minimax-test-key')
+  expect(capturedUrl).toBe('https://api.minimax.io/anthropic/v1/messages?beta=true')
+  expect(capturedHeaders?.get('x-api-key')).toBe('minimax-test-key')
   expect(capturedHeaders?.get('api-key')).toBeNull()
   expect(process.env.OPENAI_API_FORMAT).toBeUndefined()
   expect(process.env.OPENAI_AUTH_HEADER).toBeUndefined()
@@ -516,9 +441,9 @@ test('env-only MiniMax fallback replaces stale non-MiniMax model env', async () 
     model: 'MiniMax-M2.7',
   })
 
-  expect(process.env.CLAUDE_CODE_USE_OPENAI).toBe('1')
-  expect(process.env.OPENAI_MODEL).toBe('MiniMax-M2.7')
-  expect(process.env.OPENAI_API_KEY).toBe('minimax-test-key')
+  expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
+  expect(process.env.ANTHROPIC_MODEL).toBe('MiniMax-M2.7')
+  expect(process.env.ANTHROPIC_API_KEY).toBe('minimax-test-key')
 })
 
 test('env-only MiniMax fallback does not override explicit OpenAI credentials', async () => {

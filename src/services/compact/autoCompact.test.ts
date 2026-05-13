@@ -4,6 +4,23 @@ import {
   getAutoCompactThreshold,
 } from './autoCompact.ts'
 
+const SAVED_ENV = {
+  CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
+  MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+  OPENAI_MODEL: process.env.OPENAI_MODEL,
+}
+
+function restoreEnv(): void {
+  for (const [key, value] of Object.entries(SAVED_ENV)) {
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+  }
+}
+
 describe('getEffectiveContextWindowSize', () => {
   test('returns positive value for known models with large context windows', () => {
     // claude-sonnet-4 has 200k context
@@ -32,7 +49,20 @@ describe('getEffectiveContextWindowSize', () => {
       // the GrowthBook flag state.
       expect(effective).toBeGreaterThanOrEqual(21_000)
     } finally {
-      delete process.env.CLAUDE_CODE_USE_OPENAI
+      restoreEnv()
+    }
+  })
+
+  test('uses MiniMax M2 context and output metadata for compact budget', () => {
+    process.env.MINIMAX_API_KEY = 'minimax-test'
+    process.env.OPENAI_MODEL = 'MiniMax-M2.7'
+
+    try {
+      // MiniMax's recommended Anthropic-compatible endpoint supports the full
+      // M2 window. Compact reserves at most 20k summary output tokens.
+      expect(getEffectiveContextWindowSize('MiniMax-M2.7')).toBe(184_800)
+    } finally {
+      restoreEnv()
     }
   })
 })
@@ -49,7 +79,7 @@ describe('getAutoCompactThreshold', () => {
       const threshold = getAutoCompactThreshold('some-unknown-3p-model')
       expect(threshold).toBeGreaterThan(0)
     } finally {
-      delete process.env.CLAUDE_CODE_USE_OPENAI
+      restoreEnv()
     }
   })
 })
