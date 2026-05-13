@@ -102,6 +102,30 @@ test('resolveActiveRouteIdFromEnv prefers xAI when env-only keys compete', () =>
   ).toBe('xai')
 })
 
+test('resolveActiveRouteIdFromEnv lets explicit MiniMax model beat ambient OpenAI-compatible env', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      CLAUDE_CODE_USE_OPENAI: '1',
+      OPENAI_API_KEY: 'openai-key',
+      XAI_API_KEY: 'xai-key',
+      MINIMAX_API_KEY: 'minimax-key',
+      OPENAI_MODEL: 'MiniMax-M2.7',
+    }),
+  ).toBe('minimax')
+})
+
+test('resolveActiveRouteIdFromEnv does not use MiniMax when OpenAI base conflicts', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      CLAUDE_CODE_USE_OPENAI: '1',
+      OPENAI_API_KEY: 'openai-key',
+      MINIMAX_API_KEY: 'minimax-key',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+      OPENAI_MODEL: 'MiniMax-M2.7',
+    }),
+  ).toBe('openai')
+})
+
 test('resolveActiveRouteIdFromEnv keeps xAI primary base over stale API base', () => {
   expect(
     resolveActiveRouteIdFromEnv({

@@ -35,6 +35,7 @@ import {
   isEnvTruthy,
 } from '../../utils/envUtils.js'
 import {
+  getMiniMaxBaseUrlOverride,
   getRouteDefaultBaseUrl,
   getRouteDefaultModel,
   getXaiBaseUrlOverride,
@@ -114,6 +115,38 @@ function isMiniMaxModelName(value: string | undefined): boolean {
   )
 }
 
+function hasMiniMaxModelIntent(model: string | undefined): boolean {
+  return (
+    isMiniMaxModelName(model) ||
+    isMiniMaxModelName(process.env.OPENAI_MODEL) ||
+    isMiniMaxModelName(process.env.ANTHROPIC_MODEL)
+  )
+}
+
+function hasConflictingOpenAIBaseUrlForMiniMax(): boolean {
+  const openAIBaseUrl =
+    process.env.OPENAI_BASE_URL?.trim() || process.env.OPENAI_API_BASE?.trim()
+  return Boolean(openAIBaseUrl && getMiniMaxBaseUrlOverride() === undefined)
+}
+
+function shouldUseMiniMaxEnvOnlyProvider(
+  model: string | undefined,
+  envOnlyProviderRouteId: string | null,
+): boolean {
+  if (!process.env.MINIMAX_API_KEY?.trim()) {
+    return false
+  }
+
+  if (envOnlyProviderRouteId === 'minimax') {
+    return true
+  }
+
+  return (
+    (hasMiniMaxModelIntent(model) || getMiniMaxBaseUrlOverride() !== undefined) &&
+    !hasConflictingOpenAIBaseUrlForMiniMax()
+  )
+}
+
 function isXaiModelName(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase()
   return Boolean(
@@ -122,8 +155,12 @@ function isXaiModelName(value: string | undefined): boolean {
   )
 }
 
-function applyMiniMaxEnvOnlyDefaults(): void {
-  const modelOverride = process.env.OPENAI_MODEL?.trim() || undefined
+function applyMiniMaxEnvOnlyDefaults(model: string | undefined): void {
+  const modelOverride =
+    (isMiniMaxModelName(model) ? model?.trim() : undefined) ??
+    process.env.OPENAI_MODEL?.trim() ??
+    process.env.ANTHROPIC_MODEL?.trim() ??
+    undefined
 
   process.env.ANTHROPIC_BASE_URL = 'https://api.minimax.io/anthropic'
   process.env.ANTHROPIC_API_KEY = process.env.MINIMAX_API_KEY
@@ -213,10 +250,14 @@ export async function getAnthropicClient({
   }
 
   const envOnlyProviderRouteId = resolveEnvOnlyProviderRouteId(process.env)
-  const useXaiEnvOnlyProvider = envOnlyProviderRouteId === 'xai'
-  const useMiniMaxEnvOnlyProvider = envOnlyProviderRouteId === 'minimax'
+  const useMiniMaxEnvOnlyProvider = shouldUseMiniMaxEnvOnlyProvider(
+    model,
+    envOnlyProviderRouteId,
+  )
+  const useXaiEnvOnlyProvider =
+    envOnlyProviderRouteId === 'xai' && !useMiniMaxEnvOnlyProvider
   if (useMiniMaxEnvOnlyProvider) {
-    applyMiniMaxEnvOnlyDefaults()
+    applyMiniMaxEnvOnlyDefaults(model)
   }
   if (useXaiEnvOnlyProvider) {
     applyXaiEnvOnlyDefaults()
@@ -225,8 +266,9 @@ export async function getAnthropicClient({
   const shouldUseFirstPartyAuth =
     shouldUseFirstPartyAnthropicAuth(providerOverride)
   const useMiniMaxNativeProvider =
-    getAPIProvider() === 'minimax' &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)
+    useMiniMaxEnvOnlyProvider ||
+    (getAPIProvider() === 'minimax' &&
+      !isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI))
 
   if (shouldUseFirstPartyAuth) {
     logForDebugging('[API:auth] OAuth token check starting')

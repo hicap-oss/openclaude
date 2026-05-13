@@ -293,6 +293,9 @@ test('routes env-only MiniMax requests through the Anthropic-compatible API', as
   let capturedBody: Record<string, unknown> | undefined
 
   clearEnvForMiniMaxOnlyTest()
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_API_KEY = 'ambient-openai-key'
+  process.env.XAI_API_KEY = 'ambient-xai-key'
   process.env.MINIMAX_API_KEY = 'minimax-test-key'
 
   globalThis.fetch = (async (input, init) => {
