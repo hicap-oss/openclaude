@@ -521,7 +521,7 @@ describe('applyProviderProfileToProcessEnv', () => {
     expect(process.env.OPENAI_MODEL).toBe('mimo-v2.5-pro')
     expect(process.env.OPENAI_API_KEY).toBe('mimo-test-key')
     expect(process.env.MIMO_API_KEY).toBe('mimo-test-key')
-    expect(getFreshAPIProvider()).toBe('openai')
+    expect(getFreshAPIProvider()).toBe('xiaomi-mimo')
   })
 
   test('legacy OpenAI profile on restricted route ignores advanced settings', async () => {
