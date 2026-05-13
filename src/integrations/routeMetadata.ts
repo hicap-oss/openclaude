@@ -203,6 +203,19 @@ export function isXaiBaseUrl(value: string | undefined): boolean {
   }
 }
 
+export function isXiaomiMimoBaseUrl(value: string | undefined): boolean {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  try {
+    return new URL(trimmed).hostname.toLowerCase() === 'api.xiaomimimo.com'
+  } catch {
+    return false
+  }
+}
+
 export function isVeniceBaseUrl(value: string | undefined): boolean {
   const trimmed = value?.trim()
   if (!trimmed) {
@@ -310,9 +323,23 @@ export function hasVeniceEnvOnlyProviderIntent(
   )
 }
 
+export function hasXiaomiMimoEnvOnlyProviderIntent(
+  processEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return (
+    hasNonEmptyEnvValue(processEnv.MIMO_API_KEY) &&
+    !hasNonEmptyEnvValue(processEnv.OPENAI_API_KEY) &&
+    !hasNonEmptyEnvValue(processEnv.XAI_API_KEY) &&
+    !hasNonEmptyEnvValue(processEnv.MINIMAX_API_KEY) &&
+    !hasNonEmptyEnvValue(processEnv.VENICE_API_KEY) &&
+    !hasConflictingOpenAIBaseUrlForRoute(processEnv, isXiaomiMimoBaseUrl) &&
+    hasNoExplicitNonOpenAICompatibleProvider(processEnv)
+  )
+}
+
 export function resolveEnvOnlyProviderRouteId(
   processEnv: NodeJS.ProcessEnv = process.env,
-): 'xai' | 'minimax' | 'venice' | null {
+): 'xai' | 'minimax' | 'venice' | 'xiaomi-mimo' | null {
   if (hasXaiEnvOnlyProviderIntent(processEnv)) {
     return 'xai'
   }
@@ -323,6 +350,10 @@ export function resolveEnvOnlyProviderRouteId(
 
   if (hasVeniceEnvOnlyProviderIntent(processEnv)) {
     return 'venice'
+  }
+
+  if (hasXiaomiMimoEnvOnlyProviderIntent(processEnv)) {
+    return 'xiaomi-mimo'
   }
 
   return null
