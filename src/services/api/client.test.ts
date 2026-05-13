@@ -54,6 +54,35 @@ function restoreEnv(key: string, value: string | undefined): void {
   }
 }
 
+function clearEnvForMiniMaxOnlyTest(): void {
+  delete process.env.CLAUDE_CODE_USE_OPENAI
+  delete process.env.CLAUDE_CODE_USE_BEDROCK
+  delete process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH
+  delete process.env.CLAUDE_CODE_USE_VERTEX
+  delete process.env.CLAUDE_CODE_USE_FOUNDRY
+  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.CLAUDE_CODE_USE_MISTRAL
+  delete process.env.CLAUDE_CODE_USE_GEMINI
+  delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
+  delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
+  delete process.env.GEMINI_API_KEY
+  delete process.env.GEMINI_MODEL
+  delete process.env.GEMINI_BASE_URL
+  delete process.env.GEMINI_AUTH_MODE
+  delete process.env.GOOGLE_API_KEY
+  delete process.env.OPENAI_API_KEY
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_BASE
+  delete process.env.OPENAI_MODEL
+  delete process.env.XAI_API_KEY
+  delete process.env.NVIDIA_NIM
+  delete process.env.ANTHROPIC_API_KEY
+  delete process.env.ANTHROPIC_AUTH_TOKEN
+  delete process.env.ANTHROPIC_BASE_URL
+  delete process.env.ANTHROPIC_MODEL
+  delete process.env.ANTHROPIC_CUSTOM_HEADERS
+}
+
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).MACRO = { VERSION: 'test-version' }
   process.env.CLAUDE_CODE_USE_GEMINI = '1'
@@ -263,11 +292,7 @@ test('routes env-only MiniMax requests through the Anthropic-compatible API', as
   let capturedHeaders: Headers | undefined
   let capturedBody: Record<string, unknown> | undefined
 
-  delete process.env.CLAUDE_CODE_USE_GEMINI
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_MODEL
-  delete process.env.GEMINI_BASE_URL
-  delete process.env.GEMINI_AUTH_MODE
+  clearEnvForMiniMaxOnlyTest()
   process.env.MINIMAX_API_KEY = 'minimax-test-key'
 
   globalThis.fetch = (async (input, init) => {
@@ -332,11 +357,7 @@ test('env-only MiniMax fallback preserves legacy OPENAI_MODEL as Anthropic model
   let capturedUrl: string | undefined
   let capturedBody: Record<string, unknown> | undefined
 
-  delete process.env.CLAUDE_CODE_USE_GEMINI
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_MODEL
-  delete process.env.GEMINI_BASE_URL
-  delete process.env.GEMINI_AUTH_MODE
+  clearEnvForMiniMaxOnlyTest()
   process.env.MINIMAX_API_KEY = 'minimax-test-key'
   process.env.OPENAI_MODEL = 'MiniMax-M2.7-highspeed'
 
@@ -385,11 +406,7 @@ test('env-only MiniMax fallback drops stale OpenAI shim options', async () => {
   let capturedUrl: string | undefined
   let capturedHeaders: Headers | undefined
 
-  delete process.env.CLAUDE_CODE_USE_GEMINI
-  delete process.env.GEMINI_API_KEY
-  delete process.env.GEMINI_MODEL
-  delete process.env.GEMINI_BASE_URL
-  delete process.env.GEMINI_AUTH_MODE
+  clearEnvForMiniMaxOnlyTest()
   process.env.MINIMAX_API_KEY = 'minimax-test-key'
   process.env.OPENAI_API_FORMAT = 'responses'
   process.env.OPENAI_AUTH_HEADER = 'api-key'
