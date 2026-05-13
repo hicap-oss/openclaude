@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { createOpenAIShimClient } from './openaiShim.js'
 
 type FetchType = typeof globalThis.fetch
@@ -26,6 +26,10 @@ mock.module('../../utils/config.js', () => ({
 mock.module('../compact/autoCompact.js', () => ({
   getEffectiveContextWindowSize: () => mockState.effectiveWindow,
 }))
+
+afterAll(() => {
+  mock.restore()
+})
 
 type OpenAIShimClient = {
   beta: {

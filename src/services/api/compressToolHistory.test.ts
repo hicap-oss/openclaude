@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { compressToolHistory, getTiers } from './compressToolHistory.js'
 
 // Mock the two dependencies so tests are deterministic and don't read disk config.
@@ -16,6 +16,10 @@ mock.module('../../utils/config.js', () => ({
 mock.module('../compact/autoCompact.js', () => ({
   getEffectiveContextWindowSize: () => mockState.effectiveWindow,
 }))
+
+afterAll(() => {
+  mock.restore()
+})
 
 beforeEach(() => {
   mockState.enabled = true
