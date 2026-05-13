@@ -1,34 +1,64 @@
-import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { compressToolHistory, getTiers } from './compressToolHistory.js'
 
-// Mock the two dependencies so tests are deterministic and don't read disk config.
+const originalEnv = {
+  CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW:
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+}
+
+const originalConfig = {
+  toolHistoryCompressionEnabled:
+    getGlobalConfig().toolHistoryCompressionEnabled,
+}
+
 const mockState = {
   enabled: true,
   effectiveWindow: 100_000,
 }
 
-mock.module('../../utils/config.js', () => ({
-  getGlobalConfig: () => ({
+function restoreEnv(key: keyof typeof originalEnv): void {
+  const value = originalEnv[key]
+  if (value === undefined) {
+    delete process.env[key]
+  } else {
+    process.env[key] = value
+  }
+}
+
+function setEffectiveWindowForTest(effectiveWindow: number): void {
+  mockState.effectiveWindow = effectiveWindow
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '8000'
+  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(effectiveWindow + 8_000)
+}
+
+function setCompressionEnabledForTest(enabled: boolean): void {
+  mockState.enabled = enabled
+  saveGlobalConfig(current => ({
+    ...current,
     toolHistoryCompressionEnabled: mockState.enabled,
-  }),
-}))
-
-mock.module('../compact/autoCompact.js', () => ({
-  getEffectiveContextWindowSize: () => mockState.effectiveWindow,
-}))
-
-afterAll(() => {
-  mock.restore()
-})
+  }))
+}
 
 beforeEach(() => {
-  mockState.enabled = true
-  mockState.effectiveWindow = 100_000
+  setCompressionEnabledForTest(true)
+  setEffectiveWindowForTest(100_000)
 })
 
 afterEach(() => {
   mockState.enabled = true
   mockState.effectiveWindow = 100_000
+  for (const key of Object.keys(originalEnv) as Array<keyof typeof originalEnv>) {
+    restoreEnv(key)
+  }
+  saveGlobalConfig(current => ({
+    ...current,
+    toolHistoryCompressionEnabled:
+      originalConfig.toolHistoryCompressionEnabled,
+  }))
 })
 
 type Block = Record<string, unknown>
@@ -128,7 +158,7 @@ test('getTiers: ≥ 500k (gpt-4.1 1M) → recent=25, mid=50', () => {
 // ---------- master switch ----------
 
 test('pass-through when toolHistoryCompressionEnabled is false', () => {
-  mockState.enabled = false
+  setCompressionEnabledForTest(false)
   const messages = buildConversation(20)
   const result = compressToolHistory(messages, 'gpt-4o')
   expect(result).toBe(messages) // same reference (no transformation)
@@ -394,7 +424,7 @@ test('tier boundaries: 16 exchanges → 1 old + 10 mid + 5 recent', () => {
 
 test('large window (1M) with 30 exchanges: all untouched (recent=25 ≥ 30 - 5)', () => {
   // ≥500k → recent=25, mid=50. 30 exchanges → 5 mid + 25 recent. None old.
-  mockState.effectiveWindow = 1_000_000
+  setEffectiveWindowForTest(1_000_000)
   const messages = buildConversation(30, 5_000)
   const result = compressToolHistory(messages, 'gpt-4.1')
   const resultMsgs = getResultMessages(result)

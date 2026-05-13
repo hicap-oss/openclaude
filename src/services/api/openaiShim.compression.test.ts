@@ -1,35 +1,55 @@
-import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { createOpenAIShimClient } from './openaiShim.js'
 
 type FetchType = typeof globalThis.fetch
 const originalFetch = globalThis.fetch
 
 const originalEnv = {
+  CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW:
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
   OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
 }
 
-// Mock config + autoCompact so the shim sees deterministic state.
+const originalConfig = {
+  toolHistoryCompressionEnabled:
+    getGlobalConfig().toolHistoryCompressionEnabled,
+  autoCompactEnabled: getGlobalConfig().autoCompactEnabled,
+}
+
 const mockState = {
   enabled: true,
   effectiveWindow: 100_000, // Copilot gpt-4o tier
 }
 
-mock.module('../../utils/config.js', () => ({
-  getGlobalConfig: () => ({
+function restoreEnv(key: keyof typeof originalEnv): void {
+  const value = originalEnv[key]
+  if (value === undefined) {
+    delete process.env[key]
+  } else {
+    process.env[key] = value
+  }
+}
+
+function setEffectiveWindowForTest(effectiveWindow: number): void {
+  mockState.effectiveWindow = effectiveWindow
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '8000'
+  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(effectiveWindow + 8_000)
+}
+
+function setCompressionEnabledForTest(enabled: boolean): void {
+  mockState.enabled = enabled
+  saveGlobalConfig(current => ({
+    ...current,
     toolHistoryCompressionEnabled: mockState.enabled,
     autoCompactEnabled: false,
-  }),
-}))
-
-mock.module('../compact/autoCompact.js', () => ({
-  getEffectiveContextWindowSize: () => mockState.effectiveWindow,
-}))
-
-afterAll(() => {
-  mock.restore()
-})
+  }))
+}
 
 type OpenAIShimClient = {
   beta: {
@@ -100,20 +120,23 @@ function makeFakeResponse(): Response {
 }
 
 beforeEach(() => {
+  setCompressionEnabledForTest(true)
+  setEffectiveWindowForTest(100_000)
   process.env.OPENAI_BASE_URL = 'http://example.test/v1'
   process.env.OPENAI_API_KEY = 'test-key'
   delete process.env.OPENAI_MODEL
-  mockState.enabled = true
-  mockState.effectiveWindow = 100_000
 })
 
 afterEach(() => {
-  if (originalEnv.OPENAI_BASE_URL === undefined) delete process.env.OPENAI_BASE_URL
-  else process.env.OPENAI_BASE_URL = originalEnv.OPENAI_BASE_URL
-  if (originalEnv.OPENAI_API_KEY === undefined) delete process.env.OPENAI_API_KEY
-  else process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY
-  if (originalEnv.OPENAI_MODEL === undefined) delete process.env.OPENAI_MODEL
-  else process.env.OPENAI_MODEL = originalEnv.OPENAI_MODEL
+  for (const key of Object.keys(originalEnv) as Array<keyof typeof originalEnv>) {
+    restoreEnv(key)
+  }
+  saveGlobalConfig(current => ({
+    ...current,
+    toolHistoryCompressionEnabled:
+      originalConfig.toolHistoryCompressionEnabled,
+    autoCompactEnabled: originalConfig.autoCompactEnabled,
+  }))
   globalThis.fetch = originalFetch
 })
 
@@ -121,6 +144,8 @@ async function captureRequestBody(
   messages: Array<{ role: string; content: unknown }>,
   model: string,
 ): Promise<Record<string, unknown>> {
+  setCompressionEnabledForTest(mockState.enabled)
+  setEffectiveWindowForTest(mockState.effectiveWindow)
   let captured: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {
@@ -159,7 +184,7 @@ function getAssistantToolCalls(body: Record<string, unknown>): unknown[] {
 // ============================================================================
 
 test('BUG REPRO: without compression, all 30 tool results are sent at full size', async () => {
-  mockState.enabled = false
+  setCompressionEnabledForTest(false)
   const messages = buildLongConversation(30, 5_000)
 
   const body = await captureRequestBody(messages, 'gpt-4o')
