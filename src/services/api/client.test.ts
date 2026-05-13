@@ -40,6 +40,10 @@ const originalEnv = {
   ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
   ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
   ANTHROPIC_CUSTOM_HEADERS: process.env.ANTHROPIC_CUSTOM_HEADERS,
+  CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED:
+    process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED,
+  CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID:
+    process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID,
 }
 
 function restoreEnv(key: string, value: string | undefined): void {
@@ -76,8 +80,11 @@ beforeEach(() => {
   delete process.env.NVIDIA_NIM
   delete process.env.ANTHROPIC_API_KEY
   delete process.env.ANTHROPIC_AUTH_TOKEN
+  delete process.env.ANTHROPIC_BASE_URL
   delete process.env.ANTHROPIC_MODEL
   delete process.env.ANTHROPIC_CUSTOM_HEADERS
+  delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
+  delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
 })
 
 afterEach(() => {
@@ -108,6 +115,14 @@ afterEach(() => {
   restoreEnv('ANTHROPIC_BASE_URL', originalEnv.ANTHROPIC_BASE_URL)
   restoreEnv('ANTHROPIC_MODEL', originalEnv.ANTHROPIC_MODEL)
   restoreEnv('ANTHROPIC_CUSTOM_HEADERS', originalEnv.ANTHROPIC_CUSTOM_HEADERS)
+  restoreEnv(
+    'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED',
+    originalEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED,
+  )
+  restoreEnv(
+    'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID',
+    originalEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID,
+  )
   globalThis.fetch = originalFetch
 })
 
