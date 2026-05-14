@@ -78,6 +78,16 @@ test('resolveActiveRouteIdFromEnv treats MiniMax credential-only env as MiniMax'
   ).toBe('minimax')
 })
 
+test('resolveActiveRouteIdFromEnv treats Anthropic-compatible MiniMax profile env as MiniMax', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      ANTHROPIC_BASE_URL: 'https://api.minimax.io/anthropic',
+      ANTHROPIC_API_KEY: 'minimax-key',
+      ANTHROPIC_MODEL: 'MiniMax-M2.7',
+    }),
+  ).toBe('minimax')
+})
+
 test('resolveActiveRouteIdFromEnv treats Venice credential-only env as Venice', () => {
   expect(
     resolveActiveRouteIdFromEnv({

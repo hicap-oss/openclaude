@@ -218,6 +218,11 @@ export function isVeniceBaseUrl(value: string | undefined): boolean {
 export function getMiniMaxBaseUrlOverride(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
+  const anthropicBaseUrl = processEnv.ANTHROPIC_BASE_URL?.trim()
+  if (isMiniMaxBaseUrl(anthropicBaseUrl)) {
+    return anthropicBaseUrl
+  }
+
   const openAIBaseUrl = processEnv.OPENAI_BASE_URL?.trim()
   if (isMiniMaxBaseUrl(openAIBaseUrl)) {
     return openAIBaseUrl
@@ -305,8 +310,13 @@ export function hasMiniMaxEnvOnlyProviderIntent(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
   const hasExplicitMiniMaxIntent = hasMiniMaxRouteIntent(processEnv)
+  const hasMiniMaxCredential =
+    hasNonEmptyEnvValue(processEnv.MINIMAX_API_KEY) ||
+    (isMiniMaxBaseUrl(processEnv.ANTHROPIC_BASE_URL) &&
+      hasNonEmptyEnvValue(processEnv.ANTHROPIC_API_KEY))
+
   return (
-    hasNonEmptyEnvValue(processEnv.MINIMAX_API_KEY) &&
+    hasMiniMaxCredential &&
     !hasConflictingOpenAIBaseUrlForRoute(processEnv, isMiniMaxBaseUrl) &&
     (hasExplicitMiniMaxIntent ||
       (!hasNonEmptyEnvValue(processEnv.OPENAI_API_KEY) &&
