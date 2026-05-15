@@ -1,3 +1,5 @@
+import { createCombinedAbortSignal } from '../../utils/combinedAbortSignal.js'
+
 const DEFAULT_FIRECRAWL_API_URL = 'https://api.firecrawl.dev'
 const DEFAULT_TIMEOUT_MS = 300_000
 const DEFAULT_MAX_RETRIES = 3
@@ -53,11 +55,6 @@ function getFirecrawlConfig(options: FirecrawlRequestOptions) {
   return { apiKey, apiUrl }
 }
 
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
-}
-
 function sleep(seconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, seconds * 1000))
 }
@@ -107,27 +104,34 @@ async function postToFirecrawl<T>(
     headers.Authorization = `Bearer ${apiKey}`
   }
 
-  let response: Response | undefined
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    response = await fetch(`${apiUrl}${path}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        ...body,
-        origin: 'openclaude',
-      }),
-      signal: withTimeout(options.signal, options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    const { signal, cleanup } = createCombinedAbortSignal(options.signal, {
+      timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     })
 
-    if (response.status !== 502 || attempt === maxRetries - 1) {
-      break
+    try {
+      const response = await fetch(`${apiUrl}${path}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...body,
+          origin: 'openclaude',
+        }),
+        signal,
+      })
+
+      if (response.status !== 502 || attempt === maxRetries - 1) {
+        const payload = await parseFirecrawlResponse<T>(response, action)
+        return (payload.data ?? {}) as T
+      }
+    } finally {
+      cleanup()
     }
 
     await sleep(backoffFactorSeconds * Math.pow(2, attempt))
   }
 
-  const payload = await parseFirecrawlResponse<T>(response!, action)
-  return (payload.data ?? {}) as T
+  throw new Error(`Firecrawl ${action} failed before receiving a response`)
 }
 
 export async function firecrawlSearch(

@@ -130,4 +130,61 @@ describe('firecrawl client', () => {
     })
     expect(attempts).toBe(3)
   })
+
+  test('aborts in-flight requests when the request timeout elapses', async () => {
+    process.env.FIRECRAWL_API_KEY = 'fc-test-key'
+    delete process.env.FIRECRAWL_API_URL
+
+    globalThis.fetch = mock(async (_input, init) => {
+      const signal = init?.signal
+      expect(signal).toBeInstanceOf(AbortSignal)
+
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        })
+      })
+    }) as typeof globalThis.fetch
+
+    await expect(
+      Promise.race([
+        firecrawlSearch('openclaude', { maxRetries: 1, timeoutMs: 1 }),
+        new Promise((_resolve, reject) =>
+          setTimeout(
+            reject,
+            100,
+            new Error('Firecrawl request timeout did not abort'),
+          ),
+        ),
+      ]),
+    ).rejects.toThrow('The operation timed out.')
+  })
+
+  test('cleans up request timeout after a successful response', async () => {
+    process.env.FIRECRAWL_API_KEY = 'fc-test-key'
+    delete process.env.FIRECRAWL_API_URL
+
+    let requestSignal: AbortSignal | undefined
+    globalThis.fetch = mock(async (_input, init) => {
+      requestSignal = init?.signal
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            web: [{ url: 'https://example.com/cleanup' }],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }) as typeof globalThis.fetch
+
+    await expect(
+      firecrawlSearch('openclaude', { maxRetries: 1, timeoutMs: 20 }),
+    ).resolves.toEqual({
+      web: [{ url: 'https://example.com/cleanup' }],
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(requestSignal?.aborted).toBe(false)
+  })
 })
