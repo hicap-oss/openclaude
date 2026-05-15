@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
+import { setToolHistoryCompressionEnabledOverrideForTest } from './compressToolHistory.js'
 import { createOpenAIShimClient } from './openaiShim.js'
 
 type FetchType = typeof globalThis.fetch
@@ -27,6 +28,10 @@ const mockState = {
   effectiveWindow: 100_000, // Copilot gpt-4o tier
 }
 
+const MID_TIER_MODEL = 'llama-3.1-8b-instant'
+const LARGE_CONTEXT_MODEL = 'deepseek-v4-flash'
+const SMALL_CONTEXT_MODEL = 'minimax-vision-01'
+
 function restoreEnv(key: keyof typeof originalEnv): void {
   const value = originalEnv[key]
   if (value === undefined) {
@@ -45,6 +50,7 @@ function setEffectiveWindowForTest(effectiveWindow: number): void {
 
 function setCompressionEnabledForTest(enabled: boolean): void {
   mockState.enabled = enabled
+  setToolHistoryCompressionEnabledOverrideForTest(enabled)
   saveGlobalConfig(current => ({
     ...current,
     toolHistoryCompressionEnabled: mockState.enabled,
@@ -142,6 +148,7 @@ afterEach(() => {
     }))
     globalThis.fetch = originalFetch
   } finally {
+    setToolHistoryCompressionEnabledOverrideForTest(undefined)
     releaseSharedMutationLock()
   }
 })
@@ -213,12 +220,12 @@ test('BUG REPRO: without compression, all 30 tool results are sent at full size'
 // FIX: with compression, recent kept full, mid truncated, old stubbed
 // ============================================================================
 
-test('FIX: with compression on Copilot gpt-4o (tier 5/10/rest), 30 turns shrinks dramatically', async () => {
+test('FIX: with compression on a 128k model (tier 5/10/rest), 30 turns shrinks dramatically', async () => {
   mockState.enabled = true
   mockState.effectiveWindow = 100_000 // 64–128k → recent=5, mid=10
   const messages = buildLongConversation(30, 5_000)
 
-  const body = await captureRequestBody(messages, 'gpt-4o')
+  const body = await captureRequestBody(messages, MID_TIER_MODEL)
   const toolMessages = getToolMessages(body)
   const payloadSize = JSON.stringify(body).length
 
@@ -250,12 +257,12 @@ test('FIX: with compression on Copilot gpt-4o (tier 5/10/rest), 30 turns shrinks
 // FIX: large-context model gets generous tiers — compression effectively inert
 // ============================================================================
 
-test('FIX: gpt-4.1 (1M context) with 25 exchanges keeps all full (recent tier=25)', async () => {
+test('FIX: 1M context model with 25 exchanges keeps all full (recent tier=25)', async () => {
   mockState.enabled = true
   mockState.effectiveWindow = 1_000_000 // ≥500k → recent=25, mid=50
   const messages = buildLongConversation(25, 5_000)
 
-  const body = await captureRequestBody(messages, 'gpt-4.1')
+  const body = await captureRequestBody(messages, LARGE_CONTEXT_MODEL)
   const toolMessages = getToolMessages(body)
 
   expect(toolMessages.length).toBe(25)
@@ -266,12 +273,12 @@ test('FIX: gpt-4.1 (1M context) with 25 exchanges keeps all full (recent tier=25
   }
 })
 
-test('FIX: gpt-4.1 (1M context) with 30 exchanges → only first 5 mid-truncated', async () => {
+test('FIX: 1M context model with 30 exchanges → only first 5 mid-truncated', async () => {
   mockState.enabled = true
   mockState.effectiveWindow = 1_000_000 // recent=25, mid=50
   const messages = buildLongConversation(30, 5_000)
 
-  const body = await captureRequestBody(messages, 'gpt-4.1')
+  const body = await captureRequestBody(messages, LARGE_CONTEXT_MODEL)
   const toolMessages = getToolMessages(body)
 
   // 30 total: indices 0..4 mid, indices 5..29 recent
@@ -292,7 +299,7 @@ test('FIX: stub format includes original tool name and arguments', async () => {
   mockState.effectiveWindow = 100_000
   const messages = buildLongConversation(30, 5_000)
 
-  const body = await captureRequestBody(messages, 'gpt-4o')
+  const body = await captureRequestBody(messages, MID_TIER_MODEL)
   const toolMessages = getToolMessages(body)
   const oldestStub = toolMessages[0].content
 
@@ -311,7 +318,7 @@ test('FIX: every tool_call retains its full id, name, and arguments', async () =
   mockState.effectiveWindow = 100_000
   const messages = buildLongConversation(30, 5_000)
 
-  const body = await captureRequestBody(messages, 'gpt-4o')
+  const body = await captureRequestBody(messages, MID_TIER_MODEL)
   const toolCalls = getAssistantToolCalls(body) as Array<{
     id: string
     function: { name: string; arguments: string }
@@ -331,12 +338,12 @@ test('FIX: every tool_call retains its full id, name, and arguments', async () =
 // FIX: small-context provider (Mistral 32k) gets aggressive compression
 // ============================================================================
 
-test('FIX: 32k window (Mistral tier) → recent=3 keeps last 3 only', async () => {
+test('FIX: 32k window tier → recent=3 keeps last 3 only', async () => {
   mockState.enabled = true
   mockState.effectiveWindow = 24_000 // 16–32k → recent=3, mid=5
   const messages = buildLongConversation(15, 3_000)
 
-  const body = await captureRequestBody(messages, 'mistral-large-latest')
+  const body = await captureRequestBody(messages, SMALL_CONTEXT_MODEL)
   const toolMessages = getToolMessages(body)
 
   // 15 total: indices 0..6 old, 7..11 mid, 12..14 recent
