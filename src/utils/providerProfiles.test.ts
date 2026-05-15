@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
+import { acquireEnvMutex, releaseEnvMutex } from '../entrypoints/sdk/shared.js'
 import type { ProviderProfile } from './config.js'
 
 async function importFreshProvidersModule() {
@@ -92,7 +93,8 @@ function saveMockGlobalConfig(
   mockConfigState = updater(mockConfigState)
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await acquireEnvMutex()
   for (const key of RESTORED_KEYS) {
     delete process.env[key]
   }
@@ -101,20 +103,24 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  for (const key of RESTORED_KEYS) {
-    if (originalEnv[key] === undefined) {
-      delete process.env[key]
-    } else {
-      process.env[key] = originalEnv[key]
+  try {
+    for (const key of RESTORED_KEYS) {
+      if (originalEnv[key] === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = originalEnv[key]
+      }
     }
-  }
 
-  mock.restore()
-  mockConfigState = createMockConfigState()
-  process.chdir(originalCwd)
-  if (testConfigDir) {
-    rmSync(testConfigDir, { recursive: true, force: true })
-    testConfigDir = null
+    mock.restore()
+    mockConfigState = createMockConfigState()
+    process.chdir(originalCwd)
+    if (testConfigDir) {
+      rmSync(testConfigDir, { recursive: true, force: true })
+      testConfigDir = null
+    }
+  } finally {
+    releaseEnvMutex()
   }
 })
 
@@ -1235,7 +1241,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [openaiProfile],
       }))
 
-      const result = setActiveProviderProfile('openai_prof')
+      const result = setActiveProviderProfile('openai_prof', {
+        configDir: testConfigDir ?? undefined,
+      })
 
       expect(result?.id).toBe('openai_prof')
       expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
@@ -1273,7 +1281,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [ollamaProfile],
       }))
 
-      const result = setActiveProviderProfile('ollama_prof')
+      const result = setActiveProviderProfile('ollama_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1316,7 +1326,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [deepSeekProfile],
       }))
 
-      const result = setActiveProviderProfile('deepseek_prof')
+      const result = setActiveProviderProfile('deepseek_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1359,7 +1371,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [deepSeekProfile],
       }))
 
-      const result = setActiveProviderProfile('deepseek_vendor_prof')
+      const result = setActiveProviderProfile('deepseek_vendor_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1398,7 +1412,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [veniceProfile],
       }))
 
-      const result = setActiveProviderProfile('venice_prof')
+      const result = setActiveProviderProfile('venice_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1439,7 +1455,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [mimoProfile],
       }))
 
-      const result = setActiveProviderProfile('mimo_prof')
+      const result = setActiveProviderProfile('mimo_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1482,7 +1500,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [bedrockProfile],
       }))
 
-      const result = setActiveProviderProfile('bedrock_prof')
+      const result = setActiveProviderProfile('bedrock_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1524,7 +1544,9 @@ describe('setActiveProviderProfile', () => {
         providerProfiles: [anthropicProfile],
       }))
 
-      const result = setActiveProviderProfile('anthro_persisted_prof')
+      const result = setActiveProviderProfile('anthro_persisted_prof', {
+        configDir,
+      })
       const persisted = JSON.parse(
         readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
       )
@@ -1560,7 +1582,9 @@ describe('setActiveProviderProfile', () => {
       providerProfiles: [anthropicProfile],
     }))
 
-    const result = setActiveProviderProfile('anthro_prof')
+    const result = setActiveProviderProfile('anthro_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     expect(result?.id).toBe('anthro_prof')
     expect(process.env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6')
@@ -1598,12 +1622,16 @@ describe('setActiveProviderProfile', () => {
     }))
 
     // First activate the openai profile
-    setActiveProviderProfile('openai_prof')
+    setActiveProviderProfile('openai_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
     expect(process.env.OPENAI_MODEL).toBe('gpt-4o')
     expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
 
     // Now switch to the anthropic profile
-    const result = setActiveProviderProfile('anthro_prof')
+    const result = setActiveProviderProfile('anthro_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     expect(result?.id).toBe('anthro_prof')
     expect(process.env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6')
@@ -1643,12 +1671,16 @@ describe('setActiveProviderProfile', () => {
     }))
 
     // First activate the anthropic profile
-    setActiveProviderProfile('anthro_prof')
+    setActiveProviderProfile('anthro_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
     expect(process.env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6')
     expect(process.env.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com')
 
     // Now switch to the openai profile
-    const result = setActiveProviderProfile('openai_prof')
+    const result = setActiveProviderProfile('openai_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     expect(result?.id).toBe('openai_prof')
     expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
@@ -1672,7 +1704,9 @@ describe('setActiveProviderProfile', () => {
       providerProfiles: [openaiProfile],
     }))
 
-    const result = setActiveProviderProfile('nonexistent_prof')
+    const result = setActiveProviderProfile('nonexistent_prof', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     expect(result).toBeNull()
   })
@@ -1887,7 +1921,9 @@ describe('setActiveProviderProfile model cache', () => {
       ],
     }
 
-    setActiveProviderProfile('multi_provider')
+    setActiveProviderProfile('multi_provider', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     const cache = getActiveOpenAIModelOptionsCache()
     const cacheValues = cache.map((opt: { value: string }) => opt.value)
@@ -1928,7 +1964,9 @@ describe('setActiveProviderProfile model cache', () => {
       },
     }
 
-    setActiveProviderProfile('multi_provider')
+    setActiveProviderProfile('multi_provider', {
+      configDir: testConfigDir ?? undefined,
+    })
 
     expect(getActiveOpenAIModelOptionsCache()).toEqual([
       {

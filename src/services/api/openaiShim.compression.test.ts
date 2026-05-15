@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
 import { createOpenAIShimClient } from './openaiShim.js'
 
 type FetchType = typeof globalThis.fetch
@@ -119,7 +120,8 @@ function makeFakeResponse(): Response {
   )
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await acquireSharedMutationLock('openaiShim.compression.test.ts')
   setCompressionEnabledForTest(true)
   setEffectiveWindowForTest(100_000)
   process.env.OPENAI_BASE_URL = 'http://example.test/v1'
@@ -128,16 +130,20 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  for (const key of Object.keys(originalEnv) as Array<keyof typeof originalEnv>) {
-    restoreEnv(key)
+  try {
+    for (const key of Object.keys(originalEnv) as Array<keyof typeof originalEnv>) {
+      restoreEnv(key)
+    }
+    saveGlobalConfig(current => ({
+      ...current,
+      toolHistoryCompressionEnabled:
+        originalConfig.toolHistoryCompressionEnabled,
+      autoCompactEnabled: originalConfig.autoCompactEnabled,
+    }))
+    globalThis.fetch = originalFetch
+  } finally {
+    releaseSharedMutationLock()
   }
-  saveGlobalConfig(current => ({
-    ...current,
-    toolHistoryCompressionEnabled:
-      originalConfig.toolHistoryCompressionEnabled,
-    autoCompactEnabled: originalConfig.autoCompactEnabled,
-  }))
-  globalThis.fetch = originalFetch
 })
 
 async function captureRequestBody(

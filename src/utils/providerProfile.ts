@@ -200,13 +200,14 @@ type SecretValueSource = Partial<
   >
 >
 
-type ProfileFileLocation = {
+export type ProfileFileLocation = {
+  configDir?: string
   cwd?: string
   filePath?: string
 }
 
-export function getDefaultProfileFilePath(): string {
-  return join(getClaudeConfigHomeDir(), PROFILE_FILE_NAME)
+export function getDefaultProfileFilePath(configDir?: string): string {
+  return join(configDir ?? getClaudeConfigHomeDir(), PROFILE_FILE_NAME)
 }
 
 function resolveLegacyProfileFilePath(cwd = process.cwd()): string {
@@ -218,16 +219,16 @@ function resolveProfileFilePath(options?: ProfileFileLocation): string {
     return options.filePath
   }
 
-  if (options?.cwd) {
+  if (options?.cwd && !options?.configDir) {
     return resolveLegacyProfileFilePath(options.cwd)
   }
 
-  return getDefaultProfileFilePath()
+  return getDefaultProfileFilePath(options?.configDir)
 }
 
 function resolveProfileFileReadPaths(options?: ProfileFileLocation): string[] {
   const primary = resolveProfileFilePath(options)
-  if (options?.filePath || options?.cwd) {
+  if (options?.filePath || (options?.cwd && !options?.configDir)) {
     return [primary]
   }
 
@@ -235,17 +236,17 @@ function resolveProfileFileReadPaths(options?: ProfileFileLocation): string[] {
     return [primary]
   }
 
-  const legacy = resolveLegacyProfileFilePath()
+  const legacy = resolveLegacyProfileFilePath(options?.cwd)
   return legacy === primary ? [primary] : [primary, legacy]
 }
 
 function resolveProfileFileCleanupPaths(options?: ProfileFileLocation): string[] {
   const primary = resolveProfileFilePath(options)
-  if (options?.filePath || options?.cwd) {
+  if (options?.filePath || (options?.cwd && !options?.configDir)) {
     return [primary]
   }
 
-  const legacy = resolveLegacyProfileFilePath()
+  const legacy = resolveLegacyProfileFilePath(options?.cwd)
   return legacy === primary ? [primary] : [primary, legacy]
 }
 
@@ -954,13 +955,12 @@ export function saveProfileFile(
 
 export function deleteProfileFile(options?: ProfileFileLocation): string {
   const filePath = resolveProfileFilePath(options)
-  rmSync(filePath, { force: true })
-  if (!options?.filePath && !options?.cwd) {
-    const legacyPath = resolveLegacyProfileFilePath()
-    if (legacyPath !== filePath) {
-      rmSync(legacyPath, { force: true })
-    }
+  const cleanupPaths = new Set(resolveProfileFileCleanupPaths(options))
+
+  for (const cleanupPath of cleanupPaths) {
+    rmSync(cleanupPath, { force: true })
   }
+
   return filePath
 }
 
@@ -977,6 +977,61 @@ export function hasExplicitProviderSelection(
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_GITHUB) ||
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_GEMINI) ||
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_MISTRAL) ||
+    isEnvTruthy(processEnv.CLAUDE_CODE_USE_BEDROCK) ||
+    isEnvTruthy(processEnv.CLAUDE_CODE_USE_VERTEX) ||
+    isEnvTruthy(processEnv.CLAUDE_CODE_USE_FOUNDRY)
+  )
+}
+
+function hasConcreteProviderSelection(
+  processEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (processEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED === '1') {
+    return true
+  }
+
+  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_OPENAI)) {
+    return (
+      sanitizeProviderConfigValue(processEnv.OPENAI_BASE_URL) !== undefined ||
+      sanitizeProviderConfigValue(processEnv.OPENAI_API_BASE) !== undefined ||
+      normalizeProfileModel(
+        sanitizeProviderConfigValue(processEnv.OPENAI_MODEL),
+      ) !== undefined
+    )
+  }
+
+  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GEMINI)) {
+    return (
+      sanitizeProviderConfigValue(processEnv.GEMINI_BASE_URL) !== undefined ||
+      normalizeProfileModel(
+        sanitizeProviderConfigValue(processEnv.GEMINI_MODEL),
+      ) !== undefined ||
+      sanitizeApiKey(processEnv.GEMINI_API_KEY) !== undefined ||
+      sanitizeApiKey(processEnv.GOOGLE_API_KEY) !== undefined
+    )
+  }
+
+  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_MISTRAL)) {
+    return (
+      sanitizeProviderConfigValue(processEnv.MISTRAL_BASE_URL) !== undefined ||
+      normalizeProfileModel(
+        sanitizeProviderConfigValue(processEnv.MISTRAL_MODEL),
+      ) !== undefined ||
+      sanitizeApiKey(processEnv.MISTRAL_API_KEY) !== undefined
+    )
+  }
+
+  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GITHUB)) {
+    return (
+      sanitizeApiKey(processEnv.GITHUB_TOKEN) !== undefined ||
+      sanitizeApiKey(processEnv.GH_TOKEN) !== undefined ||
+      normalizeProfileModel(
+        sanitizeProviderConfigValue(processEnv.OPENAI_MODEL),
+      ) !== undefined
+    )
+  }
+
+  return (
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_BEDROCK) ||
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_VERTEX) ||
     isEnvTruthy(processEnv.CLAUDE_CODE_USE_FOUNDRY)
@@ -1431,6 +1486,7 @@ export async function buildStartupEnvFromProfile(options?: {
   persisted?: ProfileFile | null
   goal?: RecommendationGoal
   processEnv?: NodeJS.ProcessEnv
+  hasConfiguredProviderProfile?: boolean
   getOllamaChatBaseUrl?: (baseUrl?: string) => string
   resolveOllamaDefaultModel?: (goal: RecommendationGoal) => Promise<string>
   readGeminiAccessToken?: () => string | undefined
@@ -1439,6 +1495,8 @@ export async function buildStartupEnvFromProfile(options?: {
   const persisted = options?.persisted ?? loadProfileFile()
 
   const profileManagedEnv = processEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED === '1'
+  const hasConfiguredProviderProfile =
+    options?.hasConfiguredProviderProfile ?? false
 
   // The single-profile file in the user config directory is a
   // first-run / fallback mechanism. The newer plural provider-profile
@@ -1453,6 +1511,18 @@ export async function buildStartupEnvFromProfile(options?: {
   // "banner shows gpt-4o / api.openai.com even though my saved profile is
   // Moonshot" bug.
   if (profileManagedEnv) {
+    return processEnv
+  }
+
+  // If startup already has a concrete provider selection and the modern
+  // plural-profile system is configured, keep trusting that selection.
+  // This prevents the legacy single-profile file from becoming a silent
+  // third precedence layer when `/provider` profiles or explicit env/flags
+  // already chose a provider before startup fallback runs.
+  if (
+    hasConfiguredProviderProfile &&
+    hasConcreteProviderSelection(processEnv)
+  ) {
     return processEnv
   }
 
