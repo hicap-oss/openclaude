@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.11.0](https://github.com/Gitlawb/openclaude/compare/v0.10.0...v0.11.0) (2026-05-14)
+
+
+### Features
+
+* add sponsored tips with frequency-gated display ([#1140](https://github.com/Gitlawb/openclaude/issues/1140)) ([a4cbb78](https://github.com/Gitlawb/openclaude/commit/a4cbb785854619689dbedcec54b6b7739529fdd0))
+* **groq:** dynamic model discovery with mapModel filtering and hybrid catalog ([#1143](https://github.com/Gitlawb/openclaude/issues/1143)) ([a65bdb4](https://github.com/Gitlawb/openclaude/commit/a65bdb41b84e7454ef2f50921ea56f04464f0455))
+* implement high-performance SQLite storage layer with JSON audit log (Phase 2 Masterpiece) ([#1106](https://github.com/Gitlawb/openclaude/issues/1106)) ([e12432e](https://github.com/Gitlawb/openclaude/commit/e12432eaf68be2ded987f83b16f1d4ae994d4d2b))
+* **nvidia-nim:** add latest chat models, remove duplicate Mixtral 8x22B entry. Verified against integrate.api.nvidia.com/v1/models on 2026-05-13. Tracks [#1099](https://github.com/Gitlawb/openclaude/issues/1099). ([#1145](https://github.com/Gitlawb/openclaude/issues/1145)) ([0f6668f](https://github.com/Gitlawb/openclaude/commit/0f6668f554a9ed687095a3ce244fdf246cfe884c))
+* **provider:** add Gitlawb Opengateway as default provider with MiMo ([#1165](https://github.com/Gitlawb/openclaude/issues/1165)) ([5b5ba88](https://github.com/Gitlawb/openclaude/commit/5b5ba8853bd8b3d922b957a96484e1092cd3a6a3))
+* **provider:** add Venice official provider ([#1109](https://github.com/Gitlawb/openclaude/issues/1109)) ([f9621ab](https://github.com/Gitlawb/openclaude/commit/f9621ab575762453bff5d224e1e6f44067d9b1f3))
+* **provider:** add Xiaomi MiMo integration ([#1152](https://github.com/Gitlawb/openclaude/issues/1152)) ([18483e4](https://github.com/Gitlawb/openclaude/commit/18483e4d96e9763993af116112a0fee4877a1227))
+
+
+### Bug Fixes
+
+* **agent:** prevent mid-flight peeking and taking over of forks ([#1153](https://github.com/Gitlawb/openclaude/issues/1153)) ([74e3947](https://github.com/Gitlawb/openclaude/commit/74e3947d881802420b860f1e6b9f156fecdd65d7))
+* **bashPermissions:** block command substitution in array subscript position ([#1111](https://github.com/Gitlawb/openclaude/issues/1111)) ([4a98a4a](https://github.com/Gitlawb/openclaude/commit/4a98a4a227d148a3ff0ac05f20f32a0f7888a5be))
+* **bashSecurity:** tighten fc -e detection to avoid long-flag false positives ([#1107](https://github.com/Gitlawb/openclaude/issues/1107)) ([0c88def](https://github.com/Gitlawb/openclaude/commit/0c88defbe0014f434b6ae5d419c8a6234463294e))
+* **codex:** normalize empty MCP object schemas ([#1121](https://github.com/Gitlawb/openclaude/issues/1121)) ([7ea74f2](https://github.com/Gitlawb/openclaude/commit/7ea74f29f0cf01654da37deef52d9350a34b6c89))
+* **errors:** surface re-auth hint on OAuth token expiry 401s ([#1042](https://github.com/Gitlawb/openclaude/issues/1042)) ([#1142](https://github.com/Gitlawb/openclaude/issues/1142)) ([921594e](https://github.com/Gitlawb/openclaude/commit/921594efc46792d2af969ab948a2ccde3c64e062))
+* hide missing-module slash command stubs ([#1136](https://github.com/Gitlawb/openclaude/issues/1136)) ([cf33f03](https://github.com/Gitlawb/openclaude/commit/cf33f0375543afc26492426f55f8d81647288e79))
+* **integrations:** cap gpt-5.5 context window at Codex effective limit ([#1118](https://github.com/Gitlawb/openclaude/issues/1118)) ([#1141](https://github.com/Gitlawb/openclaude/issues/1141)) ([cac11dc](https://github.com/Gitlawb/openclaude/commit/cac11dce0d5b3850c0f338fda0bbb15ba25f6aa3))
+* replace raw abort signal timeouts ([#1123](https://github.com/Gitlawb/openclaude/issues/1123)) ([877b4dc](https://github.com/Gitlawb/openclaude/commit/877b4dc88600062d8bbfaf764bfbd828c55699e8))
+* surface actionable error when fetch fails in _doOpenAIRequest ([#447](https://github.com/Gitlawb/openclaude/issues/447)) ([3af0924](https://github.com/Gitlawb/openclaude/commit/3af092441d36d77cc5b23c69225be568ef8d355c))
+* update vulnerable dependencies ([#1149](https://github.com/Gitlawb/openclaude/issues/1149)) ([5328f57](https://github.com/Gitlawb/openclaude/commit/5328f57a724b15fcf688cdfd0c1d52c3de926059))
+
+## [0.10.0](https://github.com/Gitlawb/openclaude/compare/v0.9.2...v0.10.0) (2026-05-11)
+
+
+### Features
+
+* Add startup logo palette picker ([#1072](https://github.com/Gitlawb/openclaude/issues/1072)) ([ed7b697](https://github.com/Gitlawb/openclaude/commit/ed7b6972f9cd7d36cd604738f5160064061ab254))
+* **cli:** honor --model alone without requiring --provider ([#854](https://github.com/Gitlawb/openclaude/issues/854)) ([7cfc8d5](https://github.com/Gitlawb/openclaude/commit/7cfc8d5dad1aa3be247c3197e3442d9f70691db1))
+* incremental and cached token counting ([#795](https://github.com/Gitlawb/openclaude/issues/795)) ([4b1e516](https://github.com/Gitlawb/openclaude/commit/4b1e516fc70c07da6ad678df35030fa114cc8918))
+* **knowledge:** introduce local Orama persistence (feature-flagged) ([#1015](https://github.com/Gitlawb/openclaude/issues/1015)) ([5873bc6](https://github.com/Gitlawb/openclaude/commit/5873bc67141b6345d0630112a84d7fcfb149b584))
+* make Orama the default search engine with JSON-backed ([#1094](https://github.com/Gitlawb/openclaude/issues/1094)) ([f443669](https://github.com/Gitlawb/openclaude/commit/f4436697f02cc626bb55c3c4db1cd86938471e37))
+* **websearch:** add first-class Brave adapter; fix Google + Brave presets; restore Exa snippets ([#1044](https://github.com/Gitlawb/openclaude/issues/1044)) ([402cd3d](https://github.com/Gitlawb/openclaude/commit/402cd3dbe81835cc6a658b31355d16697f9e6346))
+
+
+### Bug Fixes
+
+* **agent:** ensure main agent waits for subagent completion ([#1032](https://github.com/Gitlawb/openclaude/issues/1032)) ([6af709e](https://github.com/Gitlawb/openclaude/commit/6af709e65ea61e9071cbccbdcd7c57fe87b0710e))
+* **agents:** coerce non-string whenToUse to prevent crash on save ([#1086](https://github.com/Gitlawb/openclaude/issues/1086)) ([#1087](https://github.com/Gitlawb/openclaude/issues/1087)) ([fc89767](https://github.com/Gitlawb/openclaude/commit/fc8976708b9648bb021bc80270eb9e1d416bef37))
+* **bashSecurity:** reject nested heredoc ranges in stripSafeHeredocSubstitutions ([#1050](https://github.com/Gitlawb/openclaude/issues/1050)) ([ebc9c70](https://github.com/Gitlawb/openclaude/commit/ebc9c70bb5eb7224ff94604b662d5285377ee18a))
+* **effort:** persist xhigh and send reasoning_effort on chat_completions ([#857](https://github.com/Gitlawb/openclaude/issues/857)) ([feb5791](https://github.com/Gitlawb/openclaude/commit/feb579132016ef73dfaa5f20c073fcd3c91ecd80))
+* **openai-shim:** redact ?auth=, ?passwd=, ?pwd= in diagnostic URLs ([#1070](https://github.com/Gitlawb/openclaude/issues/1070)) ([20bc6ae](https://github.com/Gitlawb/openclaude/commit/20bc6aec21a11bde4d2357c2ce45d97233be09b9)), closes [#1069](https://github.com/Gitlawb/openclaude/issues/1069)
+* **openai-shim:** strip `store` for local providers (vLLM, custom) ([#1048](https://github.com/Gitlawb/openclaude/issues/1048)) ([4830d6f](https://github.com/Gitlawb/openclaude/commit/4830d6f778c57ae83c12aeda65108e1f5e23acaf))
+* **openai-shim:** strip `store` when baseUrl points at Cerebras ([#1040](https://github.com/Gitlawb/openclaude/issues/1040)) ([0adf97d](https://github.com/Gitlawb/openclaude/commit/0adf97dc14f149eb4bcdd0cefcf45dd87eae4f2a))
+* replace unsupported Unicode glyphs with widely available alternatives ([#1088](https://github.com/Gitlawb/openclaude/issues/1088)) ([e1e277a](https://github.com/Gitlawb/openclaude/commit/e1e277a3af7217822d41e5b9dc919033d0839db8))
+* resolve two bugs making interactive mode unusable with plugin ecosystems ([#825](https://github.com/Gitlawb/openclaude/issues/825)) ([#830](https://github.com/Gitlawb/openclaude/issues/830)) ([e438c89](https://github.com/Gitlawb/openclaude/commit/e438c89fbceefcfb86a8ecdaae6d5a119a92a33b))
+* validate plugin component paths ([#1096](https://github.com/Gitlawb/openclaude/issues/1096)) ([9fed6ae](https://github.com/Gitlawb/openclaude/commit/9fed6ae4a0158695719d5ee58b453dc8c6019c0c))
+
+
+### Performance Improvements
+
+* **local:** add OPENCLAUDE_LOCAL_FAST_PATH to skip cloud-only transforms ([#1068](https://github.com/Gitlawb/openclaude/issues/1068)) ([4fad5d2](https://github.com/Gitlawb/openclaude/commit/4fad5d25dadbaee3712a2dd3749d1a9e8363a0b7)), closes [#1016](https://github.com/Gitlawb/openclaude/issues/1016)
+
 ## [0.9.2](https://github.com/Gitlawb/openclaude/compare/v0.9.1...v0.9.2) (2026-05-06)
 
 
