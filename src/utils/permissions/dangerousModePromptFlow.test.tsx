@@ -1,40 +1,29 @@
 import { PassThrough } from 'node:stream'
 
-import { afterEach, expect, mock, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import React from 'react'
 
 import { createRoot, type Root } from '../../ink.js'
+import { showDangerousModePromptIfNeeded } from './dangerousModePromptFlow.js'
 
 let hasBypassAcceptance = false
 let hasFullAccessAcceptance = false
 const seenModes: string[] = []
 
-mock.module('../settings/settings.js', () => ({
-  hasSkipDangerousModePermissionPrompt: () => hasBypassAcceptance,
-  hasSkipFullAccessModePermissionPrompt: () => hasFullAccessAcceptance,
-  updateSettingsForSource: () => ({ error: null }),
-}))
+function TestBypassPermissionsModeDialog({
+  mode = 'bypassPermissions',
+  onAccept,
+}: {
+  mode?: 'bypassPermissions' | 'fullAccess'
+  onAccept: () => void
+}) {
+  React.useEffect(() => {
+    seenModes.push(mode)
+    onAccept()
+  }, [mode, onAccept])
 
-mock.module('../../components/BypassPermissionsModeDialog.js', () => ({
-  BypassPermissionsModeDialog({
-    mode = 'bypassPermissions',
-    onAccept,
-  }: {
-    mode?: 'bypassPermissions' | 'fullAccess'
-    onAccept: () => void
-  }) {
-    React.useEffect(() => {
-      seenModes.push(mode)
-      onAccept()
-    }, [mode, onAccept])
-
-    return null
-  },
-}))
-
-const { showDangerousModePromptIfNeeded } = await import(
-  './dangerousModePromptFlow.js'
-)
+  return null
+}
 
 function createTestStreams(): {
   stdout: PassThrough
@@ -101,6 +90,14 @@ test('shows the fullAccess dangerous-mode dialog through the rendered startup fl
       'fullAccess',
       false,
       testShowSetupDialog,
+      {
+        DialogComponent: TestBypassPermissionsModeDialog,
+        getPromptState: ({ permissionMode }) => ({
+          mode: permissionMode === 'fullAccess' ? 'fullAccess' : null,
+          shouldShow: true,
+        }),
+        persistAcceptance: () => {},
+      },
     )
 
     expect(shown).toBe(true)
@@ -122,6 +119,17 @@ test('skips rendering the dialog when fullAccess consent was already accepted', 
       'fullAccess',
       false,
       testShowSetupDialog,
+      {
+        DialogComponent: TestBypassPermissionsModeDialog,
+        getPromptState: ({ permissionMode }) => ({
+          mode: permissionMode === 'fullAccess' ? 'fullAccess' : null,
+          shouldShow:
+            permissionMode === 'fullAccess'
+              ? !hasFullAccessAcceptance
+              : !hasBypassAcceptance,
+        }),
+        persistAcceptance: () => {},
+      },
     )
 
     expect(shown).toBe(false)

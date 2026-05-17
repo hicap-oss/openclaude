@@ -28,7 +28,9 @@ describe('dangerousModePromptRuntime', () => {
     const {
       getStartupDangerousPermissionPromptState,
       persistDangerousModeAcceptance,
-    } = await import('./dangerousModePromptRuntime.js')
+    } = await import(
+      `./dangerousModePromptRuntime.js?ts=${Date.now()}-${Math.random()}`
+    )
 
     expect(
       getStartupDangerousPermissionPromptState({

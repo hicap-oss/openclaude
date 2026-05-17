@@ -7,6 +7,12 @@ import {
   persistDangerousModeAcceptance,
 } from './dangerousModePromptRuntime.js'
 
+type DangerousModePromptFlowDeps = {
+  DialogComponent: typeof BypassPermissionsModeDialog
+  getPromptState: typeof getStartupDangerousPermissionPromptState
+  persistAcceptance: typeof persistDangerousModeAcceptance
+}
+
 export async function showDangerousModePromptIfNeeded(
   root: Root,
   permissionMode: PermissionMode,
@@ -15,8 +21,15 @@ export async function showDangerousModePromptIfNeeded(
     root: Root,
     renderer: (done: (result: T) => void) => React.ReactNode,
   ) => Promise<T>,
+  deps: Partial<DangerousModePromptFlowDeps> = {},
 ): Promise<boolean> {
-  const dangerousPromptState = getStartupDangerousPermissionPromptState({
+  const DialogComponent = deps.DialogComponent ?? BypassPermissionsModeDialog
+  const getPromptState =
+    deps.getPromptState ?? getStartupDangerousPermissionPromptState
+  const persistAcceptance =
+    deps.persistAcceptance ?? persistDangerousModeAcceptance
+
+  const dangerousPromptState = getPromptState({
     permissionMode,
     allowDangerouslySkipPermissions,
   })
@@ -26,10 +39,10 @@ export async function showDangerousModePromptIfNeeded(
   }
 
   await showSetupDialog(root, done => (
-    <BypassPermissionsModeDialog
+    <DialogComponent
       mode={dangerousPromptState.mode}
       onAccept={() => {
-        persistDangerousModeAcceptance(dangerousPromptState.mode!)
+        persistAcceptance(dangerousPromptState.mode!)
         done()
       }}
     />

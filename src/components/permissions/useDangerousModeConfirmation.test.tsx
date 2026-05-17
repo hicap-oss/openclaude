@@ -4,11 +4,8 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
 
 import { createRoot, type Root } from '../../ink.js'
-import * as actualDangerousModePromptRuntime from '../../utils/permissions/dangerousModePromptRuntime.js'
-import * as actualBypassPermissionsModeDialog from '../BypassPermissionsModeDialog.js'
 
 let shouldShowPrompt = true
-let useLocalMock = false
 const persistedModes: Array<'bypassPermissions' | 'fullAccess'> = []
 let continuationCount = 0
 let resolvePersisted: (() => void) | null = null
@@ -16,51 +13,28 @@ let resolveContinued: (() => void) | null = null
 
 async function importFreshUseDangerousModeConfirmation() {
   mock.module('../../utils/permissions/dangerousModePromptRuntime.js', () => ({
-    ...actualDangerousModePromptRuntime,
     getStartupDangerousPermissionPromptState: ({
       permissionMode,
     }: {
       permissionMode: 'bypassPermissions' | 'fullAccess'
-    }) =>
-      useLocalMock
-        ? {
-            mode: permissionMode,
-            shouldShow: shouldShowPrompt,
-          }
-        : actualDangerousModePromptRuntime.getStartupDangerousPermissionPromptState(
-            {
-              permissionMode,
-              allowDangerouslySkipPermissions: false,
-            },
-          ),
+    }) => ({
+      mode: permissionMode,
+      shouldShow: shouldShowPrompt,
+    }),
     persistDangerousModeAcceptance: (
       mode: 'bypassPermissions' | 'fullAccess',
     ) => {
-      if (!useLocalMock) {
-        actualDangerousModePromptRuntime.persistDangerousModeAcceptance(mode)
-        return
-      }
       persistedModes.push(mode)
       resolvePersisted?.()
     },
   }))
 
   mock.module('../BypassPermissionsModeDialog.js', () => ({
-    ...actualBypassPermissionsModeDialog,
     BypassPermissionsModeDialog({
       onAccept,
     }: {
       onAccept: () => void
     }) {
-      if (!useLocalMock) {
-        return React.createElement(
-          actualBypassPermissionsModeDialog.BypassPermissionsModeDialog,
-          {
-            onAccept,
-          },
-        )
-      }
-
       React.useEffect(() => {
         onAccept()
       }, [onAccept])
@@ -149,7 +123,6 @@ function Harness({
 afterEach(() => {
   mock.restore()
   shouldShowPrompt = true
-  useLocalMock = false
   persistedModes.length = 0
   continuationCount = 0
   resolvePersisted = null
@@ -158,7 +131,6 @@ afterEach(() => {
 
 test('persists acceptance before continuing after a dangerous-mode confirmation', async () => {
   const { root, stdout, stdin } = await createTestRoot()
-  useLocalMock = true
   const { useDangerousModeConfirmation } =
     await importFreshUseDangerousModeConfirmation()
   const persisted = new Promise<void>(resolve => {
@@ -189,7 +161,6 @@ test('persists acceptance before continuing after a dangerous-mode confirmation'
 test('continues immediately when no confirmation prompt is required', async () => {
   shouldShowPrompt = false
   const { root, stdout, stdin } = await createTestRoot()
-  useLocalMock = true
   const { useDangerousModeConfirmation } =
     await importFreshUseDangerousModeConfirmation()
   const continued = new Promise<void>(resolve => {
@@ -217,7 +188,6 @@ test('continues immediately when no confirmation prompt is required', async () =
 test('can render a resolved dangerous-mode confirmation without re-checking prompt state', async () => {
   shouldShowPrompt = false
   const { root, stdout, stdin } = await createTestRoot()
-  useLocalMock = true
   const { useDangerousModeConfirmation } =
     await importFreshUseDangerousModeConfirmation()
   const persisted = new Promise<void>(resolve => {
