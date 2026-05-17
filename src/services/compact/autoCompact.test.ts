@@ -1,4 +1,9 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+
+import {
+  acquireSharedMutationLock,
+  releaseSharedMutationLock,
+} from '../../test/sharedMutationLock.js'
 
 async function importAutoCompact() {
   mock.restore()
@@ -45,6 +50,18 @@ function restoreEnv(): void {
     }
   }
 }
+
+beforeEach(async () => {
+  await acquireSharedMutationLock('services/compact/autoCompact.test.ts')
+})
+
+afterEach(() => {
+  try {
+    restoreEnv()
+  } finally {
+    releaseSharedMutationLock()
+  }
+})
 
 describe('getEffectiveContextWindowSize', () => {
   test('returns positive value for known models with large context windows', async () => {
