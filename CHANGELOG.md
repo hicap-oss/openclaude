@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.1](https://github.com/Gitlawb/openclaude/compare/v0.12.0...v0.12.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **entrypoint:** apply --max-old-space-size=8192 universally, not just CCR ([#1191](https://github.com/Gitlawb/openclaude/issues/1191)) ([4d0603e](https://github.com/Gitlawb/openclaude/commit/4d0603e9906b24d0f4f3fc683db1950879875e16))
+* **gemini:** preserve tool calls through opengateway ([#1204](https://github.com/Gitlawb/openclaude/issues/1204)) ([13a0901](https://github.com/Gitlawb/openclaude/commit/13a090162f9b0c53080aaaa1cfa937cd9981596e))
+
+## [0.12.0](https://github.com/Gitlawb/openclaude/compare/v0.11.0...v0.12.0) (2026-05-16)
+
+
+### Features
+
+* **opengateway:** add Gemini 3.1 Flash Lite + GLM 5.1 FP8 to catalog ([#1194](https://github.com/Gitlawb/openclaude/issues/1194)) ([4d04f5b](https://github.com/Gitlawb/openclaude/commit/4d04f5bf4f1acc9d3cc00dab0b1b697e13711207))
+
+
+### Bug Fixes
+
+* **openai-shim:** surface in-stream errors and truncation hints ([#1174](https://github.com/Gitlawb/openclaude/issues/1174)) ([6174d75](https://github.com/Gitlawb/openclaude/commit/6174d75e983e80601ba369a595d7b64580e3bd51))
+* Reduce stable stringify heap usage ([#1104](https://github.com/Gitlawb/openclaude/issues/1104)) ([c433d20](https://github.com/Gitlawb/openclaude/commit/c433d20fdc5666736c800a942bbcc0f0d85cc296))
+
 ## [0.11.0](https://github.com/Gitlawb/openclaude/compare/v0.10.0...v0.11.0) (2026-05-14)
 
 
