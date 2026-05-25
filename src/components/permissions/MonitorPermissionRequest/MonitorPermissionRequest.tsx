@@ -8,9 +8,7 @@ import {
   type PermissionPromptOption,
 } from '../PermissionPrompt.js'
 import type { PermissionRequestProps } from '../PermissionRequest.js'
-import {
-  createSimplePermissionHandlers,
-} from '../simplePermissionActions.js'
+import { createSimplePermissionHandlers } from '../simplePermissionActions.js'
 
 type OptionValue = 'yes' | 'yes-dont-ask-again' | 'yes-full-access' | 'no'
 
@@ -125,9 +123,7 @@ export function MonitorPermissionRequest({
           <Text>
             Monitor({command ?? ''})
           </Text>
-          {description ? (
-            <Text dimColor>{description}</Text>
-          ) : null}
+          {description ? <Text dimColor>{description}</Text> : null}
         </Box>
       }
       options={options}
