@@ -1,0 +1,23 @@
+{
+  "name": "openclaude-vscode-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/extension",
+    "packages/webview-ui"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:shared": "npm run build -w packages/shared",
+    "build:extension": "npm run build -w packages/extension",
+    "build:webview": "npm run build -w packages/webview-ui",
+    "dev": "concurrently \"npm run dev -w packages/webview-ui\" \"npm run watch -w packages/extension\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "package": "npm run build && cd packages/extension && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "typescript": "^5.7.0"
+  }
+}

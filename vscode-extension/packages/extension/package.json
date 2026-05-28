@@ -1,70 +1,86 @@
 {
-  "name": "openclaude-vscode",
-  "displayName": "OpenClaude",
-  "description": "AI coding agent for VS Code with multi-mode support, streaming chat, and deep tool integration.",
-  "version": "1.0.0",
+  "name": "@openclaude/vscode-extension",
+  "private": true,
+  "version": "0.3.0",
   "publisher": "devnull-bootloader",
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
+    "Themes",
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:openclaude.start",
+    "onCommand:openclaude.startInWorkspaceRoot",
+    "onCommand:openclaude.openDocs",
+    "onCommand:openclaude.openSetupDocs",
+    "onCommand:openclaude.openWorkspaceProfile",
+    "onCommand:openclaude.openControlCenter",
+    "onCommand:openclaude.newChat",
+    "onCommand:openclaude.openChat",
+    "onCommand:openclaude.resumeSession",
+    "onCommand:openclaude.abortChat",
+    "onView:openclaude.controlCenter",
+    "onView:openclaude.chat"
   ],
   "main": "./dist/extension.js",
   "files": [
     "dist/**",
-    "webview-ui/dist/**",
-    "themes/**",
-    "media/**"
+    "media/**",
+    "themes/**"
   ],
   "contributes": {
     "commands": [
       {
         "command": "openclaude.start",
-        "title": "Launch in Terminal",
+        "title": "OpenClaude: Launch in Terminal",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.startInWorkspaceRoot",
-        "title": "Launch in Workspace Root",
+        "title": "OpenClaude: Launch in Workspace Root",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.openDocs",
-        "title": "Open Repository",
+        "title": "OpenClaude: Open Repository",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.openSetupDocs",
-        "title": "Open Setup Guide",
+        "title": "OpenClaude: Open Setup Guide",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.openWorkspaceProfile",
-        "title": "Open Workspace Profile",
+        "title": "OpenClaude: Open Workspace Profile",
+        "category": "OpenClaude"
+      },
+      {
+        "command": "openclaude.openControlCenter",
+        "title": "OpenClaude: Open Control Center",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.newChat",
-        "title": "New Chat",
+        "title": "OpenClaude: New Chat",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.openChat",
-        "title": "Open Chat Panel",
+        "title": "OpenClaude: Open Chat Panel",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.resumeSession",
-        "title": "Resume Session",
+        "title": "OpenClaude: Resume Session",
         "category": "OpenClaude"
       },
       {
         "command": "openclaude.abortChat",
-        "title": "Abort Generation",
+        "title": "OpenClaude: Abort Generation",
         "category": "OpenClaude"
       }
     ],
@@ -82,6 +98,11 @@
         {
           "id": "openclaude.chat",
           "name": "Chat",
+          "type": "webview"
+        },
+        {
+          "id": "openclaude.controlCenter",
+          "name": "Control Center",
           "type": "webview"
         }
       ]
@@ -122,18 +143,6 @@
             "Read-only mode — no file modifications allowed"
           ],
           "description": "Permission mode for chat sessions. Controls which tool operations are auto-approved."
-        },
-        "openclaude.agentMode": {
-          "type": "string",
-          "default": "code",
-          "enum": ["code", "architect", "debug", "ask"],
-          "enumDescriptions": [
-            "General-purpose coding mode with full tool access",
-            "Architecture and design mode focused on planning and structure",
-            "Debugging mode with enhanced diagnostic tools",
-            "Ask mode — read-only Q&A without file modifications"
-          ],
-          "description": "Agent mode for chat sessions. Controls system prompt and tool permissions."
         }
       }
     },
@@ -146,31 +155,19 @@
     ]
   },
   "scripts": {
-    "compile": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
-    "build:webview": "cd webview-ui && npm run build",
-    "build": "npm run compile && npm run build:webview",
-    "package": "npm run build && npx @vscode/vsce package --no-dependencies",
-    "lint": "eslint src --ext ts",
-    "test": "vitest run"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npx @vscode/vsce package --no-dependencies"
   },
-  "keywords": [
-    "openclaude",
-    "ai",
-    "agent",
-    "coding",
-    "llm"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hicap-oss/openclaude"
-  },
-  "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^22.0.0",
     "@types/vscode": "^1.95.0",
-    "esbuild": "^0.20.0",
-    "typescript": "^5.3.0",
-    "vitest": "^1.2.0"
-  }
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT"
 }
