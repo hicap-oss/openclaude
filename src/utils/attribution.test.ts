@@ -10,8 +10,8 @@ import * as actualModel from './model/model.js'
 import * as actualProviders from './model/providers.js'
 import {
   resetSettingsCache,
-  setSessionSettingsCache,
 } from './settings/settingsCache.js'
+import * as actualSettings from './settings/settings.js'
 import type { SettingsJson } from './settings/types.js'
 
 let getAttributionTexts: (typeof import('./attribution.js'))['getAttributionTexts']
@@ -70,8 +70,10 @@ const originalMainLoopModelOverride = getMainLoopModelOverride()
 const defaultPrAttribution =
   '🤖 Generated with [OpenClaude](https://github.com/Gitlawb/openclaude)'
 
+let settingsForTest: SettingsJson = {}
+
 function useSettings(settings: SettingsJson): void {
-  setSessionSettingsCache({ settings, errors: [] })
+  settingsForTest = settings
 }
 
 function restoreEnv(): void {
@@ -88,6 +90,7 @@ beforeEach(async () => {
   mock.restore()
   resetStateForTests()
   resetSettingsCache()
+  settingsForTest = {}
   setClientType('cli')
   setMainLoopModelOverride(undefined)
   delete process.env.CLAUDE_CODE_USE_GEMINI
@@ -130,6 +133,14 @@ beforeEach(async () => {
   mock.module('./model/providers.js', () => ({
     ...actualProviders,
     getAPIProvider: () => 'openai',
+  }))
+  // Stub settings directly so attribution.ts observes this test's intended
+  // settings even when a previous serialized Bun test has mocked the settings
+  // module or a nonced import creates a separate cache instance.
+  mock.module('./settings/settings.js', () => ({
+    ...actualSettings,
+    getInitialSettings: () => settingsForTest,
+    getSettings_DEPRECATED: () => settingsForTest,
   }))
 
   const attribution = await import(
