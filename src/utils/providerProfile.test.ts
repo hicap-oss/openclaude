@@ -952,15 +952,6 @@ test('clearPersistedCodexOAuthProfile clears both default and legacy OAuth profi
   const previousCwd = process.cwd()
 
   try {
-    const providerProfileModule = await importFreshProviderProfileModule()
-    const {
-      PROFILE_FILE_NAME,
-      clearPersistedCodexOAuthProfile,
-      createProfileFile,
-      loadProfileFile,
-      saveProfileFile,
-    } = providerProfileModule
-
     process.env.CLAUDE_CONFIG_DIR = configDir
     process.chdir(cwd)
 
