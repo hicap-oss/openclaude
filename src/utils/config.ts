@@ -675,6 +675,10 @@ export type GlobalConfig = {
   // When enabled, triggers forced compaction if the message count exceeds the
   // chosen threshold, regardless of token usage.
   maxMessagesCompactionThreshold?: MaxMessagesCompactionThreshold
+
+  // Use a different (e.g. cheaper/faster) model for compaction.
+  // Defaults to mainLoopModel when unset.
+  compactModel?: string
 }
 
 /**
@@ -779,6 +783,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'knowledgeGraphEnabled',
   'logoColor',
   'maxMessagesCompactionThreshold',
+  'compactModel',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
