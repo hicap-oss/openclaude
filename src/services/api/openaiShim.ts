@@ -42,6 +42,8 @@ import {
   refreshCodexAccessTokenIfNeeded,
 } from '../../utils/codexCredentials.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { anthropicSsePassthrough as parseAnthropicSsePassthrough, createReaderCanceller, createStreamAbortError, getStreamIdleTimeoutMs, readWithIdleTimeout, StreamIdleTimeoutError, throwIfStreamAborted } from './openaiShim/streamControl.js'
+export { getStreamIdleTimeoutMs } from './openaiShim/streamControl.js'
 import { isBareMode, isEnvTruthy } from '../../utils/envUtils.js'
 import {
   resolveModelReasoningControl,
@@ -158,13 +160,6 @@ function isCopilotTokenExpiredError(text: string): boolean {
   return lower.includes('token expired') || lower.includes('token has expired')
 }
 
-class StreamIdleTimeoutError extends Error {
-  constructor(timeoutMs: number) {
-    super(`Stream idle timeout - no chunks received for ${timeoutMs}ms`)
-    this.name = 'StreamIdleTimeoutError'
-  }
-}
-
 class ResponseHeadersTimeoutError extends Error {
   constructor(timeoutMs: number, url: string) {
     super(
@@ -193,55 +188,6 @@ function isAbortError(error: unknown): boolean {
       'name' in error &&
       error.name === 'AbortError')
   )
-}
-
-function createStreamAbortError(): DOMException {
-  return new DOMException('Aborted', 'AbortError')
-}
-
-function throwIfStreamAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw createStreamAbortError()
-  }
-}
-
-type StreamReadResult = Awaited<
-  ReturnType<ReadableStreamDefaultReader<Uint8Array>['read']>
->
-
-function createReaderCanceller(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  signal?: AbortSignal,
-): {
-    cancel: (error?: unknown) => void
-    cleanup: () => void
-  } {
-  let cancelled = false
-  const cancel = (error: unknown = createStreamAbortError()) => {
-    if (cancelled) return
-    cancelled = true
-    void reader.cancel(error).catch(() => {})
-  }
-  const onAbort = () => cancel(createStreamAbortError())
-
-  signal?.addEventListener('abort', onAbort, { once: true })
-  if (signal?.aborted) {
-    onAbort()
-  }
-
-  return {
-    cancel,
-    cleanup: () => signal?.removeEventListener('abort', onAbort),
-  }
-}
-
-export function getStreamIdleTimeoutMs(): number {
-  const raw = process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS?.trim()
-  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_STREAM_IDLE_TIMEOUT_MS
-  const parsed = Number(raw)
-  return Number.isSafeInteger(parsed) && parsed > 0
-    ? Math.min(parsed, MAX_STREAM_IDLE_TIMEOUT_MS)
-    : DEFAULT_STREAM_IDLE_TIMEOUT_MS
 }
 
 export function getApiTimeoutMs(): number {
@@ -437,69 +383,6 @@ async function fetchWithHeadersDeadline(
     { ...init, signal: options.callerSignal },
     { fetcher: fetchWithAttemptDeadline },
   )
-}
-
-async function readWithIdleTimeout(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  timeoutMs: number,
-  options: {
-    signal?: AbortSignal
-    cancelReader?: (error?: unknown) => void
-    onTimeout?: () => void
-  } = {},
-): Promise<StreamReadResult> {
-  const signal = options.signal
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-
-  return new Promise<StreamReadResult>((resolve, reject) => {
-    let settled = false
-    const cleanup = () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId)
-        timeoutId = undefined
-      }
-      signal?.removeEventListener('abort', onAbort)
-    }
-    const finishResolve = (value: StreamReadResult) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve(value)
-    }
-    const finishReject = (error: unknown) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(error)
-    }
-    const cancelAndReject = (error: unknown) => {
-      if (options.cancelReader) {
-        options.cancelReader(error)
-      } else {
-        void reader.cancel(error).catch(() => {})
-      }
-      finishReject(error)
-    }
-    const onAbort = () => cancelAndReject(createStreamAbortError())
-
-    signal?.addEventListener('abort', onAbort, { once: true })
-    if (signal?.aborted) {
-      onAbort()
-      return
-    }
-
-    timeoutId = setTimeout(() => {
-      const error = new StreamIdleTimeoutError(timeoutMs)
-      try {
-        options.onTimeout?.()
-      } catch {
-        // ignore diagnostic callback failures
-      }
-      cancelAndReject(error)
-    }, timeoutMs)
-
-    reader.read().then(finishResolve, finishReject)
-  })
 }
 
 function isGithubModelsMode(): boolean {
@@ -2150,9 +2033,6 @@ interface ParsedTextToolCall {
   arguments: Record<string, unknown>
 }
 
-// Module-level counter ensures unique IDs across calls within a session.
-let _textToolCallCounter = 0
-
 // Walks forward from `start` (which must be `{`) tracking string/escape/brace
 // state and returns the substring up to and including the matching `}`, or
 // null if the braces are never balanced (truncated input).
@@ -2220,7 +2100,7 @@ function parseAndAdd(
   if (seen.has(dedupKey)) return false
   seen.add(dedupKey)
 
-  results.push({ id: `ollama_tc_${++_textToolCallCounter}`, name, arguments: args })
+  results.push({ id: `ollama_tc_${nextTextToolCallSequence()}`, name, arguments: args })
   return true
 }
 
@@ -2287,6 +2167,13 @@ export function parseTextToolCalls(text: string): {
   }
 
   return { calls: results, toolCallRanges: acceptedRanges }
+}
+
+// Shared façade state keeps raw-text and XML fallback IDs unique per session.
+let textToolCallSequence = 0
+
+function nextTextToolCallSequence(): number {
+  return ++textToolCallSequence
 }
 
 // ---------------------------------------------------------------------------
@@ -2429,7 +2316,7 @@ export function parseXmlToolCalls(text: string, allowHy3 = false): {
     const dedupKey = `${name}:${JSON.stringify(args)}`
     if (seen.has(dedupKey)) return
     seen.add(dedupKey)
-    results.push({ id: `xml_tc_${++_textToolCallCounter}`, name, arguments: args })
+    results.push({ id: `xml_tc_${nextTextToolCallSequence()}`, name, arguments: args })
   }
 
   const hy3Blocks = allowHy3
@@ -2542,74 +2429,13 @@ async function* anthropicSsePassthrough(
   _model: string,
   signal?: AbortSignal,
 ): AsyncGenerator<AnthropicStreamEvent> {
-  const readerOrNull = response.body?.getReader()
-  if (!readerOrNull) throw new Error('Response body is not readable')
-  const reader: ReadableStreamDefaultReader<Uint8Array> = readerOrNull
-  const readerCanceller = createReaderCanceller(reader, signal)
-  const decoder = new TextDecoder()
-  let buffer = ''
-  const streamIdleTimeoutMs = getStreamIdleTimeoutMs()
-  let lastDataTime = Date.now()
-  let streamComplete = false
-
-  try {
-    while (true) {
-      const { done, value } = await readWithIdleTimeout(reader, streamIdleTimeoutMs, {
-        signal,
-        cancelReader: readerCanceller.cancel,
-        onTimeout: () => {
-          const elapsed = Math.round((Date.now() - lastDataTime) / 1000)
-          logForDebugging(
-            `Anthropic-compatible SSE stream idle for ${elapsed}s (limit: ${streamIdleTimeoutMs / 1000}s). Connection likely dropped.`,
-            { level: 'error' },
-          )
-        },
-      })
-      if (done) {
-        streamComplete = true
-        break
-      }
-      if (value) lastDataTime = Date.now()
-
-      throwIfStreamAborted(signal)
-      buffer += decoder.decode(value, { stream: true })
-      const chunks = buffer.split('\n\n')
-      buffer = chunks.pop() ?? ''
-
-      for (const chunk of chunks) {
-        throwIfStreamAborted(signal)
-        const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean)
-        if (lines.length === 0) continue
-
-        const dataLines = lines.filter(l => l.startsWith('data: '))
-        if (dataLines.length === 0) continue
-
-        const rawData = dataLines.map(l => l.slice(6)).join('\n')
-        if (rawData === '[DONE]') {
-          streamComplete = true
-          return
-        }
-
-        let parsed: AnthropicStreamEvent
-        try {
-          parsed = JSON.parse(rawData) as AnthropicStreamEvent
-        } catch {
-          // skip malformed frames
-          continue
-        }
-        if (parsed && typeof parsed === 'object' && 'type' in parsed) {
-          throwIfStreamAborted(signal)
-          yield parsed
-        }
-      }
-    }
-  } finally {
-    if (!streamComplete || signal?.aborted) {
-      readerCanceller.cancel(createStreamAbortError())
-    }
-    readerCanceller.cleanup()
-    reader.releaseLock()
-  }
+  yield* parseAnthropicSsePassthrough<AnthropicStreamEvent>(
+    response,
+    signal,
+    (message, options) => options?.level
+      ? logForDebugging(message, { level: options.level })
+      : logForDebugging(message),
+  )
 }
 
 /**
@@ -2818,6 +2644,8 @@ async function* geminiSseToAnthropic(
   }
 }
 
+// Extraction seam: Gemini streaming | completed response conversion.
+
 type NonStreamingOpenAIResponse = {
   id?: string
   model?: string
@@ -2992,6 +2820,8 @@ function headersWithRequestUrl(headers: Headers, requestUrl?: string): Headers {
   }
   return next
 }
+
+// Extraction seam: response metadata | generic stream conversion.
 
 async function* openaiStreamToAnthropic(
   response: Response,
@@ -3910,6 +3740,8 @@ async function* openaiStreamToAnthropic(
   yield { type: 'message_stop' }
 }
 
+// Extraction seam: stream conversion | stream lifecycle façade.
+
 // ---------------------------------------------------------------------------
 // The shim client — duck-types as Anthropic SDK
 // ---------------------------------------------------------------------------
@@ -4552,7 +4384,6 @@ class OpenAIShimMessages {
       }
     }
 
-    let omitResponsesTools = false
     let responsesInput: ReturnType<
       typeof convertAnthropicMessagesToResponsesInput
     > | undefined
@@ -4573,6 +4404,12 @@ class OpenAIShimMessages {
         effectiveTransport === 'responses_compat',
       )
       return responsesInput
+    }
+
+    const omitTools = {
+      responses: false,
+      anthropic: false,
+      gemini: false,
     }
     const buildResponsesBody = (): Record<string, unknown> => {
       const responsesBody: Record<string, unknown> = {
@@ -4617,7 +4454,7 @@ class OpenAIShimMessages {
         responsesBody.include = ['reasoning.encrypted_content']
       }
 
-      if (!omitResponsesTools && params.tools && params.tools.length > 0) {
+      if (!omitTools.responses && params.tools && params.tools.length > 0) {
         const convertedTools = convertToolsToResponsesTools(
           params.tools as Array<{
             name?: string
@@ -4642,7 +4479,6 @@ class OpenAIShimMessages {
     // (they originate from the Anthropic SDK). We pass them through directly,
     // only adding the top-level system (as string or content-block array)
     // and max_tokens.
-    let omitAnthropicTools = false
     const buildAnthropicMessagesBody = (): Record<string, unknown> => {
       const anthropicBody: Record<string, unknown> = {
         model: request.resolvedModel,
@@ -4663,7 +4499,7 @@ class OpenAIShimMessages {
         if (text && !text.startsWith('x-anthropic-billing-header')) anthropicBody.system = text
       }
 
-      if (!omitAnthropicTools && params.tools && params.tools.length > 0) {
+      if (!omitTools.anthropic && params.tools && params.tools.length > 0) {
         anthropicBody.tools = params.tools
       }
       if (params.tool_choice) {
@@ -4700,7 +4536,6 @@ class OpenAIShimMessages {
 
     // Google AI SDK body — used when endpointPath is /models/gemini-*.
     // Converts Anthropic-format params to Google AI SDK format.
-    let omitGeminiTools = false
     const buildGeminiBody = (): Record<string, unknown> => {
       const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = []
 
@@ -4797,7 +4632,7 @@ class OpenAIShimMessages {
       }
 
       // Tools — convert Anthropic tool format to Google functionDeclarations
-      if (!omitGeminiTools && params.tools && params.tools.length > 0) {
+      if (!omitTools.gemini && params.tools && params.tools.length > 0) {
         const functionDeclarations = (params.tools as Array<{
           name?: string
           description?: string
@@ -4815,6 +4650,9 @@ class OpenAIShimMessages {
       return geminiBody
     }
 
+    // Extraction boundary: request planning | request execution.
+    // The prepared body builders above are executor inputs, not executor-owned logic.
+    // Keep this marker stable so either extraction can merge independently.
     const baseHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       ...filterAnthropicHeaders(shimConfig.headers),
@@ -5184,6 +5022,9 @@ class OpenAIShimMessages {
       return hasImages
     }
 
+    // Extraction boundary: executor preparation | request serialization.
+    // Native Ollama/body serialization remains request-planner-owned.
+    // Keep this marker stable so executor and planner extractions stay disjoint.
     // WHY: byte-identity required for implicit prefix caching in
     // OpenAI/Kimi/DeepSeek. stableStringify sorts object keys at every
     // depth so spurious insertion-order differences across rebuilds of
@@ -5225,6 +5066,9 @@ class OpenAIShimMessages {
         ? JSON.stringify(payload)
         : stableStringifyJson(payload)
     }
+    // Extraction boundary: request serialization | executor attempt loop.
+    // The executor consumes the serialized body through a lazy rebuild callback.
+    // Keep this marker stable so executor and planner extractions stay disjoint.
     serializedBody = serializeBody()
 
     const refreshSerializedBody = (): void => {
@@ -5607,9 +5451,9 @@ class OpenAIShimMessages {
         delete body.tools
         delete body.tool_choice
         delete body.tool_stream
-        omitResponsesTools = true
-        omitAnthropicTools = true
-        omitGeminiTools = true
+        omitTools.responses = true
+        omitTools.anthropic = true
+        omitTools.gemini = true
         refreshSerializedBody()
 
         logForDebugging(
@@ -5666,6 +5510,9 @@ class OpenAIShimMessages {
       500, undefined, 'OpenAI shim: request loop exited unexpectedly',
       new Headers(),
     )
+    // Extraction boundary: request execution | response conversion façade.
+    // Response conversion methods below remain façade-owned until their own extraction.
+    // Keep this marker stable so adjacent independent deletions do not overlap.
   }
 
   private _convertNonStreamingResponse(

@@ -14,7 +14,7 @@ import {
   extractOpenAICategoryMarker,
   isOpenAIRequestNonReplayable,
 } from './openaiErrorClassification.ts'
-import { createOpenAIShimClient, hasMistralApiHost } from './openaiShim.ts'
+import { createOpenAIShimClient, hasMistralApiHost, parseTextToolCalls, parseXmlToolCalls } from './openaiShim.ts'
 import * as realCodexShim from './codexShim.js'
 import * as realGithubModelsCredentials from '../../utils/githubModelsCredentials.js'
 
@@ -2128,6 +2128,8 @@ test('preserves usage from final OpenAI stream chunk with empty choices', async 
   expect(usageEvent?.usage?.output_tokens).toBe(45)
 })
 
+// Extraction seam: stream conversion usage | shared stream control.
+
 test('readWithIdleTimeout rejects quickly and cancels a stalled reader', async () => {
   const testApi = await getStreamIdleTestApi('stream-idle-helper')
   const cancelReasons: unknown[] = []
@@ -2275,6 +2277,8 @@ test('Anthropic-compatible passthrough stream rejects with idle timeout when it 
   expect((caught as Error).name).toBe('StreamIdleTimeoutError')
   expect((stalled.cancelReasons[0] as Error).name).toBe('StreamIdleTimeoutError')
 })
+
+// Extraction seam: shared stream control | Gemini stream conversion.
 
 test('Gemini SSE stream rejects with idle timeout when it stalls', async () => {
   process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = '25'
@@ -2982,6 +2986,8 @@ test('controller abort stops buffered Gemini SSE events', async () => {
     stalled.close()
   }
 })
+
+// Extraction seam: Gemini stream conversion | native Ollama stream adaptation.
 
 test('controller abort reaches native Ollama converted stream', async () => {
   const previousBaseUrl = process.env.OPENAI_BASE_URL
@@ -3819,6 +3825,11 @@ test('does not infer Gemini mode from OPENAI_BASE_URL path substrings', async ()
   })
 
   expect(capturedAuthorization).toBeNull()
+})
+
+test('the OpenAI shim façade exposes the beta.messages namespace', () => {
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  expect(client.beta.messages).toBeDefined()
 })
 
 test('preserves image tool results as placeholders in follow-up requests', async () => {
@@ -5511,6 +5522,8 @@ test('preserves Gemini thought signature from non-streaming message extra_conten
   })
 })
 
+// Extraction seam: provider signature metadata | raw streaming tool fallback.
+
 test('converts Gemini raw tool-call text into streaming tool_use blocks', async () => {
   globalThis.fetch = (async (_input, _init) => {
     const chunks = makeStreamChunks([
@@ -5617,6 +5630,8 @@ test('converts Gemini raw tool-call text into streaming tool_use blocks', async 
     | undefined
   expect(stop?.delta?.stop_reason).toBe('tool_use')
 })
+
+// Extraction seam: streaming conversion | non-streaming response conversion.
 
 test('converts Gemini raw tool-call text into non-streaming tool_use blocks', async () => {
   globalThis.fetch = (async (_input, _init) => {
@@ -5923,6 +5938,8 @@ test('keeps terminal empty Bash tool arguments invalid in non-streaming response
     },
   ])
 })
+
+// Extraction seam: completed tool parsing | streamed tool normalization.
 
 test('normalizes plain string Bash tool arguments in streaming responses', async () => {
   globalThis.fetch = (async (_input, _init) => {
@@ -6674,6 +6691,8 @@ test('repairs truncated JSON objects even without command field', async () => {
   expect(streamedInput).toBe('{"cwd":"/tmp"}')
 })
 
+// Extraction seam: streamed tool normalization | schema and tool conversion.
+
 test('preserves raw input for unknown plain string tool arguments', async () => {
   globalThis.fetch = (async (_input, _init) => {
     return new Response(
@@ -6793,6 +6812,8 @@ test('preserves parsed string input for unknown JSON string tool arguments', asy
     },
   ])
 })
+
+// Extraction seam: argument parsing | schema sanitation.
 
 test('sanitizes malformed MCP tool schemas before sending them to OpenAI', async () => {
   let requestBody: Record<string, unknown> | undefined
@@ -6926,9 +6947,21 @@ test('optional tool properties are not added to required[] — fixes Groq/Azure 
   expect(parameters?.additionalProperties).toBe(false)
 })
 
+// Extraction seam: schema sanitation | message conversion façade.
+
 // ---------------------------------------------------------------------------
-// Issue #202 — consecutive role coalescing (Devstral, Mistral strict templates)
+// Extraction boundary: tool conversion | message conversion (Issue #202)
+//
+// Focused suites own the behavior on either side of this boundary.
+// This pointer intentionally remains in the façade suite after extraction.
+// It also gives independent extraction branches stable merge context.
+//
 // ---------------------------------------------------------------------------
+
+test('the OpenAI shim façade exposes the messages.create contract', () => {
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  expect(typeof client.beta.messages.create).toBe('function')
+})
 
 function makeNonStreamResponse(content = 'ok'): Response {
   return new Response(
@@ -7000,6 +7033,31 @@ test('coalesces consecutive assistant messages preserving tool_calls (issue #202
   const assistantMsgs = sentMessages?.filter(m => m.role === 'assistant')
   expect(assistantMsgs?.length).toBe(1)
   expect(assistantMsgs?.[0]?.tool_calls?.length).toBeGreaterThan(0)
+})
+
+// ---------------------------------------------------------------------------
+// Extraction boundary: message conversion | non-streaming response conversion
+//
+// Focused suites own the behavior on either side of this boundary.
+// This pointer intentionally remains in the façade suite after extraction.
+// It also gives independent extraction branches stable merge context.
+//
+// ---------------------------------------------------------------------------
+
+test('the OpenAI shim façade creates independent client instances', () => {
+  const first = createOpenAIShimClient({}) as OpenAIShimClient
+  const second = createOpenAIShimClient({}) as OpenAIShimClient
+  expect(first).not.toBe(second)
+  expect(first.beta).not.toBe(second.beta)
+  expect(first.beta.messages).not.toBe(second.beta.messages)
+})
+
+test('raw-text and XML fallback tool calls use one unique sequence', () => {
+  const text = parseTextToolCalls('{"name":"from_text","arguments":{}}')
+  const xml = parseXmlToolCalls('<tool_call>{"name":"from_xml","arguments":{}}</tool_call>')
+  expect(text.calls[0]?.id).toMatch(/^ollama_tc_\d+$/)
+  expect(xml.calls[0]?.id).toMatch(/^xml_tc_\d+$/)
+  expect(text.calls[0]?.id?.replace(/^\D+/, '')).not.toBe(xml.calls[0]?.id?.replace(/^\D+/, ''))
 })
 
 test('non-streaming: reasoning_content emitted as thinking block only when content is null', async () => {
@@ -7293,6 +7351,8 @@ test('non-streaming: strips <think> tag block from assistant content', async () 
     { type: 'text', text: 'Hey! How can I help you today?' },
   ])
 })
+
+// Extraction seam: non-streaming response conversion | streaming event conversion.
 
 test('streaming: thinking block closed before tool call', async () => {
   globalThis.fetch = (async (_input, _init) => {
@@ -7592,6 +7652,9 @@ test('streaming: preserves prose without tags (no phrase-based false positive)',
   )
 })
 
+// Extraction boundary: response conversion | executor network behavior.
+// The executor suite owns the contiguous network-classification block below.
+// Keep this marker stable for independent adjacent test migrations.
 test('strips credentials and query params from URL in fetch network error message', async () => {
   process.env.OPENAI_BASE_URL =
     'https://user:password@internal.example.test/v1?token=abc123'
@@ -8375,6 +8438,9 @@ test('self-heals localhost resolution failures by retrying local loopback base U
   expect(requestUrls).toContain('http://127.0.0.1:11434/api/chat')
 })
 
+// Extraction boundary: executor network behavior | native Ollama routing.
+// Native Ollama endpoint selection remains an adapter/facade integration concern.
+// Keep this marker stable for independent adjacent test migrations.
 test('uses native Ollama chat endpoint when local base URL omits /v1', async () => {
   process.env.OPENAI_BASE_URL = 'http://localhost:11434'
 
@@ -8478,6 +8544,9 @@ test('keeps HTTPS localhost Ollama-port proxies on chat completions', async () =
   ])
 })
 
+// Extraction boundary: native Ollama routing | executor tool self-healing.
+// The single retry test below moves with request execution.
+// Keep this marker stable for independent adjacent test migrations.
 test('self-heals tool-call incompatibility by retrying local Ollama requests without tools', async () => {
   process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
 
@@ -8558,6 +8627,9 @@ test('self-heals tool-call incompatibility by retrying local Ollama requests wit
   expect(requestBodies[1]?.tool_stream).toBeUndefined()
 })
 
+// Extraction boundary: executor tool self-healing | message conversion.
+// Message-history normalization below belongs to the message converter.
+// Keep this marker stable for independent adjacent test migrations.
 test('preserves valid tool_result and drops orphan tool_result', async () => {
   let requestBody: Record<string, unknown> | undefined
 
@@ -8776,6 +8848,9 @@ test('injects semantic assistant message when tool result is followed by user me
   expect(semanticMsg.content).not.toContain('user')
 })
 
+// Extraction boundary: executor tool self-healing | message/provider shaping.
+// Provider request shaping below is not owned by the executor.
+// Keep this marker stable for independent adjacent test migrations.
 test('Moonshot: uses max_tokens (not max_completion_tokens) and strips store', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.moonshot.ai/v1'
   process.env.OPENAI_API_KEY = 'sk-moonshot-test'
@@ -10209,6 +10284,9 @@ test('NVIDIA NIM Z.AI GLM omits chat template thinking kwargs when thinking is d
   expect(requestBody?.chat_template_kwargs).toBeUndefined()
 })
 
+// Extraction boundary: provider reasoning compatibility | tool-stream routing.
+// The gateway emission regression below remains provider/request-shaping coverage.
+// Keep this marker stable for independent adjacent test migrations.
 // Regression test for #1950: GLM-5.2 served through NVIDIA NIM
 // (`integrate.api.nvidia.com`) must never receive the Z.AI-proprietary
 // `tool_stream` parameter. Streaming tool calls are simply not streamed on
@@ -10262,6 +10340,9 @@ test('NVIDIA NIM Z.AI GLM streaming request with tools does not send tool_stream
   expect(requestBody?.tool_stream).toBeUndefined()
 })
 
+// Extraction boundary: provider tool-stream shaping | executor tool-stream retry.
+// The three retry-state tests below move together with request execution.
+// Keep this marker stable for independent adjacent test migrations.
 // Regression test for #1950: even if a gateway rejects `tool_stream` with a
 // 400 (e.g. NVIDIA NIM: `Unsupported parameter(s): tool_stream`), the shim
 // self-heals by dropping only that parameter and retrying with tools intact.
@@ -10413,6 +10494,9 @@ test('Shim retries a tool_stream rejection with the same pooled credential (#195
   expect(authorizations).toEqual(['Bearer key-a', 'Bearer key-a'])
 })
 
+// Extraction boundary: executor tool-stream retry | provider tool-stream shaping.
+// Provider emission rules below remain with compatibility/request planning.
+// Keep this marker stable for independent adjacent test migrations.
 test('Z.AI GLM-5.2: streaming requests with tools send tool_stream', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
   process.env.OPENAI_API_KEY = 'sk-zai-test'
@@ -11105,6 +11189,9 @@ test('preserves valid tool pairs after history pruning while dropping orphaned t
   expect(toolMessages[0]?.tool_call_id).toBe('call_retained')
 })
 
+// Extraction boundary: history pruning | executor Copilot refresh behavior.
+// The contiguous Copilot authentication retry block below moves with execution.
+// Keep this marker stable for independent adjacent test migrations.
 function makeCodexSseResponse(responseData: Record<string, unknown>): Response {
   const data = JSON.stringify(responseData)
   return makeSseResponse([`event: response.completed\ndata: ${data}\n\n`])
@@ -11299,6 +11386,9 @@ test('GitHub Copilot responses fallback does not retry non-retryable HTTP failur
   expect(fetchCalls).toBe(2)
 })
 
+// Extraction boundary: history pruning | executor Copilot refresh behavior.
+// The contiguous Copilot authentication retry block below moves with execution.
+// Keep this marker stable for independent adjacent test migrations.
 test('GitHub Copilot 401 chat_completions retries with refreshed token', async () => {
   const realModule = realGithubModelsCredentials
   try {
@@ -11770,6 +11860,9 @@ test('GitHub Copilot 401 chat_completions with providerOverride does not trigger
   }
 })
 
+// Extraction boundary: executor Copilot refresh behavior | JSON fallback conversion.
+// JSON fallback response conversion below is not owned by request execution.
+// Keep this marker stable for independent adjacent test migrations.
 // --- JSON fallback regression tests (#1749) -------------------------------
 // Some OpenAI-compatible providers ignore `stream: true` and return a full
 // `application/json` chat completion. The fallback inside
@@ -12009,6 +12102,19 @@ test('JSON fallback: recovers raw-text tool call into tool_use block', async () 
     | undefined
   expect(stopEvent?.delta?.stop_reason).toBe('tool_use')
 
+})
+
+test('JSON fallback façade terminates converted messages', async () => {
+  const events = await collectFallbackEvents({
+    id: 'chatcmpl-json-boundary',
+    model: 'boundary-model',
+    choices: [{
+      message: { role: 'assistant', content: 'ok' },
+      finish_reason: 'stop',
+    }],
+  })
+
+  expect(events.at(-1)?.type).toBe('message_stop')
 })
 
 test('JSON fallback: recovers Tencent HY3 text tool calls into tool_use blocks', async () => {
