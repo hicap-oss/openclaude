@@ -243,6 +243,7 @@ function hasUsableEnvCredentialValue(
     envVar === 'AIMLAPI_API_KEY' ||
     envVar === 'APISMART_API_KEY' ||
     envVar === 'CONCENTRATE_API_KEY' ||
+    envVar === 'HICAP_API_KEY' ||
     envVar === 'LLMTR_API_KEY' ||
     envVar === 'CMD_API_KEY' ||
     envVar === 'COMMANDCODE_API_KEY' ||
@@ -448,6 +449,54 @@ export function isConcentrateBaseUrl(value: string | undefined): boolean {
       !url.search &&
       !url.hash &&
       url.hostname.toLowerCase() === 'api.concentrate.ai'
+    )
+  } catch {
+    return false
+  }
+}
+
+export function isHicapBaseUrl(value: string | undefined): boolean {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  try {
+    const url = new URL(trimmed)
+    return (
+      url.protocol === 'https:' &&
+      !url.port &&
+      !url.search &&
+      !url.hash &&
+      url.hostname.toLowerCase() === 'api.hicap.ai'
+    )
+  } catch {
+    return false
+  }
+}
+
+const HICAP_CANONICAL_INFERENCE_BASE_URL = 'https://api.hicap.ai/v1'
+
+export function isCanonicalHicapInferenceBaseUrl(
+  value: string | undefined,
+): boolean {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  try {
+    const canonical = new URL(HICAP_CANONICAL_INFERENCE_BASE_URL)
+    const candidate = new URL(trimmed)
+    const normalizePath = (pathname: string): string =>
+      pathname.replace(/\/+$/, '') || '/'
+    return (
+      candidate.protocol === 'https:' &&
+      !candidate.port &&
+      !candidate.search &&
+      !candidate.hash &&
+      candidate.hostname.toLowerCase() === canonical.hostname.toLowerCase() &&
+      normalizePath(candidate.pathname) === normalizePath(canonical.pathname)
     )
   } catch {
     return false
@@ -1039,6 +1088,22 @@ export function hasConcentrateEnvOnlyProviderIntent(
   )
 }
 
+export function hasHicapEnvOnlyProviderIntent(
+  processEnv: NodeJS.ProcessEnv = process.env,
+): boolean {
+  // HICAP_API_KEY is a dedicated selection credential, so it establishes route
+  // identity on its own. Base URL and model overrides stay configuration
+  // details: a stale OPENAI_MODEL must not be able to claim the route, and an
+  // explicit non-Hicap OpenAI base URL still wins.
+  return (
+    hasUsableOpenAICredential(processEnv.HICAP_API_KEY) &&
+    !hasConflictingOpenAIBaseUrlForRoute(processEnv, isHicapBaseUrl) &&
+    !(processEnv.CLAUDE_CODE_USE_OPENAI !== undefined &&
+      !isEnvTruthy(processEnv.CLAUDE_CODE_USE_OPENAI)) &&
+    hasNoExplicitNonOpenAIProvider(processEnv)
+  )
+}
+
 export function resolveEnvOnlyProviderRouteId(
   processEnv: NodeJS.ProcessEnv = process.env,
 ):
@@ -1053,6 +1118,7 @@ export function resolveEnvOnlyProviderRouteId(
   | 'clinepass'
   | 'apismart'
   | 'concentrate'
+  | 'hicap'
   | null {
   if (
     hasMiniMaxRouteIntent(processEnv) &&
@@ -1103,6 +1169,10 @@ export function resolveEnvOnlyProviderRouteId(
 
   if (hasConcentrateEnvOnlyProviderIntent(processEnv)) {
     return 'concentrate'
+  }
+
+  if (hasHicapEnvOnlyProviderIntent(processEnv)) {
+    return 'hicap'
   }
 
   return null
@@ -1200,6 +1270,15 @@ export function resolveRouteCredentialValue(
     routeId === 'commandcode' &&
     options?.baseUrl !== undefined &&
     !isCanonicalCommandcodeInferenceBaseUrl(options.baseUrl)
+  ) {
+    return undefined
+  }
+  // Hicap follows the same split: host-scoped route identity, but the dedicated
+  // HICAP_API_KEY is only forwarded to the documented /v1 inference endpoint.
+  if (
+    routeId === 'hicap' &&
+    options?.baseUrl !== undefined &&
+    !isCanonicalHicapInferenceBaseUrl(options.baseUrl)
   ) {
     return undefined
   }

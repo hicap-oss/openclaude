@@ -8,8 +8,10 @@ import {
   getRouteProviderTypeLabel,
   isApismartBaseUrl,
   isCanonicalApismartInferenceBaseUrl,
+  isCanonicalHicapInferenceBaseUrl,
   isCloudflareBaseUrl,
   isConcentrateBaseUrl,
+  isHicapBaseUrl,
   isLongcatBaseUrl,
   resolveActiveRouteIdFromEnv,
   resolveRouteCredentialValue,
@@ -1261,3 +1263,105 @@ test('resolveActiveRouteIdFromEnv does not let a stale Concentrate model overrid
     }),
   ).toBe('openai')
 })
+
+test('isHicapBaseUrl matches the Hicap API host', () => {
+  expect(isHicapBaseUrl('https://api.hicap.ai/v1')).toBe(true)
+  expect(isHicapBaseUrl('https://api.hicap.ai/v1/chat/completions')).toBe(true)
+  expect(isHicapBaseUrl('http://api.hicap.ai/v1')).toBe(false)
+  expect(isHicapBaseUrl('https://api.hicap.ai:8443/v1')).toBe(false)
+  expect(isHicapBaseUrl('https://api.hicap.ai.evil.test/v1')).toBe(false)
+  expect(isHicapBaseUrl(undefined)).toBe(false)
+})
+
+test('isCanonicalHicapInferenceBaseUrl only accepts the documented /v1 endpoint', () => {
+  expect(isCanonicalHicapInferenceBaseUrl('https://api.hicap.ai/v1')).toBe(true)
+  expect(isCanonicalHicapInferenceBaseUrl('https://api.hicap.ai/v1/')).toBe(true)
+  expect(isCanonicalHicapInferenceBaseUrl('https://API.HICAP.AI/v1')).toBe(true)
+  expect(isCanonicalHicapInferenceBaseUrl('https://api.hicap.ai')).toBe(false)
+  expect(
+    isCanonicalHicapInferenceBaseUrl('https://api.hicap.ai/staging/v1'),
+  ).toBe(false)
+  expect(
+    isCanonicalHicapInferenceBaseUrl('https://api.hicap.ai/v1?debug=1'),
+  ).toBe(false)
+  expect(isCanonicalHicapInferenceBaseUrl(undefined)).toBe(false)
+})
+
+test('resolveActiveRouteIdFromEnv treats Hicap credential-only env as Hicap', () => {
+  expect(resolveActiveRouteIdFromEnv({ HICAP_API_KEY: 'hicap-key' })).toBe(
+    'hicap',
+  )
+})
+
+test('resolveActiveRouteIdFromEnv ignores placeholder Hicap credentials', () => {
+  for (const placeholder of ['SUA_CHAVE', 'null', 'undefined', '   ']) {
+    expect(resolveActiveRouteIdFromEnv({ HICAP_API_KEY: placeholder })).not.toBe(
+      'hicap',
+    )
+  }
+})
+
+test('resolveActiveRouteIdFromEnv prefers the Hicap dedicated key over ambient OpenAI credentials', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      HICAP_API_KEY: 'hicap-key',
+      OPENAI_API_KEY: 'generic-openai-key',
+    }),
+  ).toBe('hicap')
+})
+
+test('resolveActiveRouteIdFromEnv does not infer Hicap with a conflicting OpenAI base URL', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      HICAP_API_KEY: 'hicap-key',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+    }),
+  ).not.toBe('hicap')
+})
+
+test('resolveActiveRouteIdFromEnv keeps an explicit non-OpenAI provider over a Hicap key-only setup', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      HICAP_API_KEY: 'hicap-key',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+    }),
+  ).not.toBe('hicap')
+})
+
+test('resolveActiveRouteIdFromEnv honors an explicit OpenAI opt-out over Hicap', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      CLAUDE_CODE_USE_OPENAI: '0',
+      HICAP_API_KEY: 'hicap-key',
+    }),
+  ).not.toBe('hicap')
+})
+
+test('resolveActiveRouteIdFromEnv refines a generic OpenAI profile by the Hicap base URL', () => {
+  expect(
+    resolveActiveRouteIdFromEnv({
+      CLAUDE_CODE_USE_OPENAI: '1',
+      OPENAI_BASE_URL: 'https://api.hicap.ai/v1',
+      OPENAI_API_KEY: 'generic-openai-key',
+    }),
+  ).toBe('hicap')
+})
+
+test('resolveRouteCredentialValue forwards HICAP_API_KEY only for the canonical endpoint', () => {
+  expect(getRouteCredentialEnvVars('hicap')).toContain('HICAP_API_KEY')
+  expect(
+    resolveRouteCredentialValue({
+      routeId: 'hicap',
+      baseUrl: 'https://api.hicap.ai/v1',
+      processEnv: { HICAP_API_KEY: 'hicap-key' },
+    }),
+  ).toBe('hicap-key')
+  expect(
+    resolveRouteCredentialValue({
+      routeId: 'hicap',
+      baseUrl: 'https://api.hicap.ai/staging/v1',
+      processEnv: { HICAP_API_KEY: 'hicap-key' },
+    }),
+  ).toBeUndefined()
+})
+

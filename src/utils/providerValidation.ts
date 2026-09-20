@@ -18,6 +18,7 @@ import {
   getRouteDefaultModel,
   isCanonicalApismartInferenceBaseUrl,
   isCanonicalConcentrateInferenceBaseUrl,
+  isCanonicalHicapInferenceBaseUrl,
   isCanonicalCommandcodeInferenceBaseUrl,
   isCloudflareBaseUrl,
   isLongcatBaseUrl,
@@ -145,6 +146,7 @@ function hasUsableCredentialEnvValue(
     envVar === 'AIMLAPI_API_KEY' ||
     envVar === 'APISMART_API_KEY' ||
     envVar === 'CONCENTRATE_API_KEY' ||
+    envVar === 'HICAP_API_KEY' ||
     envVar === 'LLMTR_API_KEY' ||
     envVar === 'CMD_API_KEY' ||
     envVar === 'COMMANDCODE_API_KEY' ||
@@ -270,12 +272,19 @@ function getRuntimeValidationTarget(
     return enabledTarget
   }
 
-  // The documented CONCENTRATE_API_KEY-only setup is routed before the client
-  // applies its default base URL. Select its descriptor directly so startup
-  // validates the dedicated credential, including a noncanonical dedicated
-  // base URL, instead of returning early for an unset OpenAI mode.
-  if (resolveActiveRouteIdFromEnv(env) === 'concentrate') {
-    return validationTargets.find(target => target.descriptor.id === 'concentrate')
+  // The documented CONCENTRATE_API_KEY-only and HICAP_API_KEY-only setups are
+  // routed before the client applies its default base URL. Select the
+  // descriptor directly so startup validates the dedicated credential,
+  // including a noncanonical dedicated base URL, instead of returning early
+  // for an unset OpenAI mode.
+  const dedicatedEnvOnlyRouteId = resolveActiveRouteIdFromEnv(env)
+  if (
+    dedicatedEnvOnlyRouteId === 'concentrate' ||
+    dedicatedEnvOnlyRouteId === 'hicap'
+  ) {
+    return validationTargets.find(
+      target => target.descriptor.id === dedicatedEnvOnlyRouteId,
+    )
   }
 
   if (!useOpenAI) {
@@ -306,6 +315,8 @@ function getRuntimeValidationTarget(
           !isCanonicalApismartInferenceBaseUrl(request.baseUrl)) ||
         (target.descriptor.id === 'concentrate' &&
           !isCanonicalConcentrateInferenceBaseUrl(request.baseUrl)) ||
+        (target.descriptor.id === 'hicap' &&
+          !isCanonicalHicapInferenceBaseUrl(request.baseUrl)) ||
         (target.descriptor.id === 'commandcode' &&
           !isCanonicalCommandcodeInferenceBaseUrl(request.baseUrl)))
     ) {

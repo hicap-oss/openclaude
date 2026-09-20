@@ -128,6 +128,7 @@ const PROFILE_ENV_KEYS = [
   'CONCENTRATE_API_KEY',
   'CONCENTRATE_BASE_URL',
   'CONCENTRATE_MODEL',
+  'HICAP_API_KEY',
   'CLINE_API_KEY',
   'OPENCODE_API_KEY',
   'CLAUDE_CODE_PROVIDER_ROUTE_ID',
@@ -230,6 +231,7 @@ export type ProfileEnv = {
   CONCENTRATE_API_KEY?: string
   CONCENTRATE_BASE_URL?: string
   CONCENTRATE_MODEL?: string
+  HICAP_API_KEY?: string
   OPENCODE_API_KEY?: string
   CLOUDFLARE_API_TOKEN?: string
   CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS?: string
@@ -1493,7 +1495,8 @@ function hasConcreteProviderSelection(
     sanitizeApiKey(processEnv.FIREWORKS_API_KEY) !== undefined ||
     sanitizeApiKey(processEnv.NEARAI_API_KEY) !== undefined ||
     sanitizeApiKey(processEnv.LONGCAT_API_KEY) !== undefined ||
-    sanitizeApiKey(processEnv.CONCENTRATE_API_KEY) !== undefined
+    sanitizeApiKey(processEnv.CONCENTRATE_API_KEY) !== undefined ||
+    sanitizeApiKey(processEnv.HICAP_API_KEY) !== undefined
   )
 }
 
@@ -2230,6 +2233,7 @@ export async function buildLaunchEnv(options: {
     'ATLAS_CLOUD_API_KEY',
     'APISMART_API_KEY',
     'CONCENTRATE_API_KEY',
+    'HICAP_API_KEY',
     'LLMTR_API_KEY',
     'CMD_API_KEY',
     'COMMANDCODE_API_KEY',
@@ -2253,6 +2257,9 @@ export async function buildLaunchEnv(options: {
       continue
     }
     if (dedicatedKey === 'CONCENTRATE_API_KEY' && effectiveOpenAIRouteId !== 'concentrate') {
+      continue
+    }
+    if (dedicatedKey === 'HICAP_API_KEY' && effectiveOpenAIRouteId !== 'hicap') {
       continue
     }
     if (dedicatedKey === 'LLMTR_API_KEY' && effectiveOpenAIRouteId !== 'llmtr') {

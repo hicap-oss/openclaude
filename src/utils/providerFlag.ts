@@ -418,6 +418,9 @@ export function applyProviderFlag(
                           process.env.OPENAI_API_KEY === process.env.NEARAI_API_KEY
                         ? 'nearai'
                         : process.env.OPENAI_API_KEY !== undefined &&
+                          process.env.OPENAI_API_KEY === process.env.HICAP_API_KEY
+                        ? 'hicap'
+                        : process.env.OPENAI_API_KEY !== undefined &&
                           process.env.OPENAI_API_KEY === process.env.FIREWORKS_API_KEY
                         ? 'fireworks'
                         : process.env.OPENAI_API_KEY !== undefined &&
