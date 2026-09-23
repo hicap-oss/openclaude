@@ -58,6 +58,7 @@ import {
   isCanonicalApismartInferenceBaseUrl,
   isCanonicalConcentrateInferenceBaseUrl,
   isCanonicalLlmtrInferenceBaseUrl,
+  isCanonicalHicapInferenceBaseUrl,
   isCanonicalCommandcodeInferenceBaseUrl,
   isFireworksBaseUrl,
   isLongcatBaseUrl,
@@ -193,6 +194,17 @@ function isLlmtrProfile(profile: ProviderProfile): boolean {
   return !baseUrl || isCanonicalLlmtrInferenceBaseUrl(baseUrl)
 }
 
+function isHicapProfile(profile: ProviderProfile): boolean {
+  const { route } = resolveProfileCompatibility(profile.provider)
+  if (route.routeId !== 'hicap') {
+    return false
+  }
+  const baseUrl = profile.baseUrl?.trim()
+  // Missing base URL resolves to the Hicap default, which is canonical. Only
+  // the documented `/v1` inference URL may carry the dedicated key.
+  return !baseUrl || isCanonicalHicapInferenceBaseUrl(baseUrl)
+}
+
 function isCommandcodeProfile(profile: ProviderProfile): boolean {
   const { route, compatibilityMode } = resolveProfileCompatibility(
     profile.provider,
@@ -297,6 +309,7 @@ export function resolveProfileCapabilityRouteId(
     (providerRouteId === 'cloudflare' ||
       providerRouteId === 'longcat' ||
       providerRouteId === 'concentrate' ||
+      providerRouteId === 'hicap' ||
       providerRouteId === 'llmtr' ||
       providerRouteId === 'commandcode') &&
     baseUrl &&
@@ -306,9 +319,11 @@ export function resolveProfileCapabilityRouteId(
         ? isLongcatBaseUrl(baseUrl)
         : providerRouteId === 'concentrate'
           ? isCanonicalConcentrateInferenceBaseUrl(baseUrl)
-          : providerRouteId === 'commandcode'
-            ? isCanonicalCommandcodeInferenceBaseUrl(baseUrl)
-            : isCanonicalLlmtrInferenceBaseUrl(baseUrl))
+          : providerRouteId === 'hicap'
+            ? isCanonicalHicapInferenceBaseUrl(baseUrl)
+            : providerRouteId === 'commandcode'
+              ? isCanonicalCommandcodeInferenceBaseUrl(baseUrl)
+              : isCanonicalLlmtrInferenceBaseUrl(baseUrl))
   ) {
     return 'custom'
   }
@@ -1110,6 +1125,8 @@ export function applyProviderProfileToProcessEnv(
           ? getRouteDefaultBaseUrl('apismart') ?? profile.baseUrl
           : route.routeId === 'concentrate' && !profile.baseUrl?.trim()
             ? getRouteDefaultBaseUrl('concentrate') ?? profile.baseUrl
+            : route.routeId === 'hicap' && !profile.baseUrl?.trim()
+              ? getRouteDefaultBaseUrl('hicap') ?? profile.baseUrl
             : route.routeId === 'commandcode' && !profile.baseUrl?.trim()
               ? getRouteDefaultBaseUrl('commandcode') ?? profile.baseUrl
             : profile.baseUrl
@@ -1145,6 +1162,8 @@ export function applyProviderProfileToProcessEnv(
       route.routeId === 'concentrate' && !isConcentrateProfile(profile)
     const withholdRetargetedLlmtrCredential =
       route.routeId === 'llmtr' && !isLlmtrProfile(profile)
+    const withholdRetargetedHicapCredential =
+      route.routeId === 'hicap' && !isHicapProfile(profile)
     const withholdRetargetedCommandcodeCredential =
       route.routeId === 'commandcode' && !isCommandcodeProfile(profile)
     if (
@@ -1152,6 +1171,7 @@ export function applyProviderProfileToProcessEnv(
       !withholdRetargetedApismartCredential &&
       !withholdRetargetedConcentrateCredential &&
       !withholdRetargetedLlmtrCredential &&
+      !withholdRetargetedHicapCredential &&
       !withholdRetargetedCommandcodeCredential
     ) {
       openAIProfileEnv.OPENAI_API_KEY = profile.apiKey
@@ -1192,6 +1212,9 @@ export function applyProviderProfileToProcessEnv(
       }
       if (isConcentrateProfile(profile)) {
         openAIProfileEnv.CONCENTRATE_API_KEY = profile.apiKey
+      }
+      if (isHicapProfile(profile)) {
+        openAIProfileEnv.HICAP_API_KEY = profile.apiKey
       }
       if (isCommandcodeProfile(profile)) {
         openAIProfileEnv.CMD_API_KEY = profile.apiKey
@@ -1297,6 +1320,20 @@ export function applyProviderProfileToProcessEnv(
           openAIProfileEnv.OPENAI_API_KEY =
             openAIProfileEnv.OPENAI_API_KEY ?? ambientLlmtrKey
           openAIProfileEnv.LLMTR_API_KEY = ambientLlmtrKey
+        }
+      }
+    }
+    // Hicap follows the LLMTR contract: keep route identity even when
+    // retargeted, and adopt the ambient dedicated credential only for a
+    // keyless canonical profile.
+    if (route.routeId === 'hicap') {
+      openAIProfileEnv.CLAUDE_CODE_PROVIDER_ROUTE_ID = 'hicap'
+      if (isHicapProfile(profile) && !profile.apiKey) {
+        const ambientHicapKey = sanitizeApiKey(process.env.HICAP_API_KEY)
+        if (ambientHicapKey) {
+          openAIProfileEnv.OPENAI_API_KEY =
+            openAIProfileEnv.OPENAI_API_KEY ?? ambientHicapKey
+          openAIProfileEnv.HICAP_API_KEY = ambientHicapKey
         }
       }
     }
@@ -1608,6 +1645,8 @@ function buildOpenAICompatibleStartupEnv(
     !isConcentrateProfile(activeProfile)
   const withholdRetargetedLlmtrCredential =
     activeProfileRouteId === 'llmtr' && !isLlmtrProfile(activeProfile)
+  const withholdRetargetedHicapCredential =
+    activeProfileRouteId === 'hicap' && !isHicapProfile(activeProfile)
   const withholdRetargetedCommandcodeCredential =
     activeProfileRouteId === 'commandcode' &&
     !isCommandcodeProfile(activeProfile)
@@ -1616,6 +1655,7 @@ function buildOpenAICompatibleStartupEnv(
     resolveRouteIdFromBaseUrl(activeProfile.baseUrl) === 'aimlapi'
   const isConcentrateProfileFlag = isConcentrateProfile(activeProfile)
   const isLlmtrProfileFlag = isLlmtrProfile(activeProfile)
+  const isHicapProfileFlag = isHicapProfile(activeProfile)
   const isCommandcodeProfileFlag = isCommandcodeProfile(activeProfile)
 
   if (
@@ -1623,6 +1663,7 @@ function buildOpenAICompatibleStartupEnv(
     !withholdRetargetedApismartCredential &&
     !withholdRetargetedConcentrateCredential &&
     !withholdRetargetedLlmtrCredential &&
+    !withholdRetargetedHicapCredential &&
     !withholdRetargetedCommandcodeCredential
   ) {
     const strictEnv = buildOpenAIProfileEnv({
@@ -1667,6 +1708,9 @@ function buildOpenAICompatibleStartupEnv(
       }
       if (isLlmtrProfileFlag) {
         strictEnv.LLMTR_API_KEY = activeProfile.apiKey
+      }
+      if (isHicapProfileFlag) {
+        strictEnv.HICAP_API_KEY = activeProfile.apiKey
       }
       if (isCommandcodeProfileFlag) {
         strictEnv.CMD_API_KEY = activeProfile.apiKey
@@ -1735,6 +1779,9 @@ function buildOpenAICompatibleStartupEnv(
   if (activeProfileRouteId === 'llmtr') {
     env.CLAUDE_CODE_PROVIDER_ROUTE_ID = 'llmtr'
   }
+  if (activeProfileRouteId === 'hicap') {
+    env.CLAUDE_CODE_PROVIDER_ROUTE_ID = 'hicap'
+  }
   if (activeProfileRouteId === 'commandcode') {
     env.CLAUDE_CODE_PROVIDER_ROUTE_ID = 'commandcode'
   }
@@ -1743,6 +1790,7 @@ function buildOpenAICompatibleStartupEnv(
     !withholdRetargetedApismartCredential &&
     !withholdRetargetedConcentrateCredential &&
     !withholdRetargetedLlmtrCredential &&
+    !withholdRetargetedHicapCredential &&
     !withholdRetargetedCommandcodeCredential
   ) {
     env.OPENAI_API_KEY = activeProfile.apiKey
@@ -1775,6 +1823,9 @@ function buildOpenAICompatibleStartupEnv(
     }
     if (isLlmtrProfileFlag) {
       env.LLMTR_API_KEY = activeProfile.apiKey
+    }
+    if (isHicapProfileFlag) {
+      env.HICAP_API_KEY = activeProfile.apiKey
     }
     if (isCommandcodeProfileFlag) {
       env.CMD_API_KEY = activeProfile.apiKey
@@ -2034,6 +2085,9 @@ function triggerStartupDiscoveryRefreshForProfile(
     return
   }
   if (route.routeId === 'llmtr' && !isLlmtrProfile(profile)) {
+    return
+  }
+  if (route.routeId === 'hicap' && !isHicapProfile(profile)) {
     return
   }
   if (route.routeId === 'commandcode' && !isCommandcodeProfile(profile)) {

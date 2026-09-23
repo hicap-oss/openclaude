@@ -297,6 +297,17 @@ function buildConcentrateProfile(overrides: Partial<ProviderProfile> = {}): Prov
   })
 }
 
+function buildHicapProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
+  return buildProfile({
+    provider: 'hicap',
+    name: 'Hicap',
+    baseUrl: 'https://api.hicap.ai/v1',
+    model: 'claude-opus-4.8',
+    apiKey: 'hicap-test-key',
+    ...overrides,
+  })
+}
+
 function buildLlmtrProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
   return buildProfile({
     provider: 'llmtr',
@@ -1302,6 +1313,85 @@ describe('applyProviderProfileToProcessEnv', () => {
     expect(process.env.OPENAI_API_KEY).toBeUndefined()
     expect(process.env.CONCENTRATE_API_KEY).toBeUndefined()
     expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('concentrate')
+  })
+
+  test('hicap profile applies OpenAI-compatible env with HICAP_API_KEY mirror', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+    process.env.CLAUDE_CODE_USE_GEMINI = '1'
+
+    applyProviderProfileToProcessEnv(buildHicapProfile())
+    const { getAPIProvider: getFreshAPIProvider } =
+      await importFreshProvidersModule()
+
+    expect(process.env.CLAUDE_CODE_USE_GEMINI).toBeUndefined()
+    expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
+    expect(process.env.OPENAI_BASE_URL).toBe('https://api.hicap.ai/v1')
+    expect(process.env.OPENAI_MODEL).toBe('claude-opus-4.8')
+    expect(process.env.OPENAI_API_KEY).toBe('hicap-test-key')
+    expect(process.env.HICAP_API_KEY).toBe('hicap-test-key')
+    expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('hicap')
+    expect(getFreshAPIProvider()).toBe('openai')
+  })
+
+  test('hicap profile without a base URL retains its dedicated credential for the default route', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+
+    applyProviderProfileToProcessEnv(buildHicapProfile({ baseUrl: undefined }))
+
+    expect(process.env.OPENAI_BASE_URL).toBe('https://api.hicap.ai/v1')
+    expect(process.env.OPENAI_API_KEY).toBe('hicap-test-key')
+    expect(process.env.HICAP_API_KEY).toBe('hicap-test-key')
+  })
+
+  test('keyless canonical Hicap profile adopts its ambient dedicated key', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+    process.env.HICAP_API_KEY = 'ambient-hicap-key'
+
+    applyProviderProfileToProcessEnv(buildHicapProfile({ apiKey: undefined }))
+
+    expect(process.env.HICAP_API_KEY).toBe('ambient-hicap-key')
+    expect(process.env.OPENAI_API_KEY).toBe('ambient-hicap-key')
+    expect(
+      resolveRouteCredentialValue({
+        routeId: 'hicap',
+        baseUrl: process.env.OPENAI_BASE_URL,
+        processEnv: process.env,
+      }),
+    ).toBe('ambient-hicap-key')
+  }, 20_000)
+
+  test('retargeted Hicap profile withholds its dedicated credential but keeps route identity', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+
+    applyProviderProfileToProcessEnv(
+      buildHicapProfile({ baseUrl: 'https://proxy.example/v1' }),
+    )
+
+    expect(process.env.OPENAI_BASE_URL).toBe('https://proxy.example/v1')
+    expect(process.env.OPENAI_API_KEY).toBeUndefined()
+    expect(process.env.HICAP_API_KEY).toBeUndefined()
+    expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('hicap')
+  })
+
+  test('generic OpenAI profile at the canonical Hicap endpoint keeps its credential generic', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+
+    applyProviderProfileToProcessEnv(
+      buildProfile({
+        provider: 'openai',
+        baseUrl: 'https://api.hicap.ai/v1',
+        model: 'claude-opus-4.8',
+        apiKey: 'generic-hicap-key',
+      }),
+    )
+
+    expect(process.env.OPENAI_API_KEY).toBe('generic-hicap-key')
+    expect(process.env.HICAP_API_KEY).toBeUndefined()
   })
 
   test.each(['SUA_CHAVE', 'sua_chave', 'null', 'undefined', ' NULL '])(

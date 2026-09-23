@@ -45,6 +45,7 @@ import {
   getNearaiBaseUrlOverride,
   isCanonicalApismartInferenceBaseUrl,
   isCanonicalConcentrateInferenceBaseUrl,
+  isCanonicalHicapInferenceBaseUrl,
   getRouteDefaultBaseUrl,
   getRouteDefaultModel,
   getXaiBaseUrlOverride,
@@ -450,6 +451,38 @@ function applyConcentrateEnvOnlyDefaults(): void {
   delete process.env.ANTHROPIC_CUSTOM_HEADERS
 }
 
+function applyHicapEnvOnlyDefaults(): void {
+  const baseUrlOverride =
+    usableProviderConfigEnvValue(process.env.OPENAI_BASE_URL) ||
+    usableProviderConfigEnvValue(process.env.OPENAI_API_BASE) ||
+    undefined
+  const modelOverride =
+    usableProviderConfigEnvValue(process.env.OPENAI_MODEL) || undefined
+  const apiKey = process.env.HICAP_API_KEY
+
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL =
+    baseUrlOverride ?? getRouteDefaultBaseUrl('hicap')
+  process.env.OPENAI_MODEL = modelOverride ?? getRouteDefaultModel('hicap')
+  // Mirror the dedicated key only for Hicap's documented /v1 inference
+  // endpoint. A same-host URL alone is not enough, and a placeholder must not
+  // leak into OPENAI_API_KEY for later routes in this process.
+  if (
+    hasUsableOpenAICredential(apiKey) &&
+    isCanonicalHicapInferenceBaseUrl(process.env.OPENAI_BASE_URL)
+  ) {
+    process.env.OPENAI_API_KEY = apiKey
+  } else {
+    delete process.env.OPENAI_API_KEY
+  }
+  delete process.env.OPENAI_API_FORMAT
+  delete process.env.OPENAI_AZURE_STYLE
+  delete process.env.OPENAI_AUTH_HEADER
+  delete process.env.OPENAI_AUTH_SCHEME
+  delete process.env.OPENAI_AUTH_HEADER_VALUE
+  delete process.env.ANTHROPIC_CUSTOM_HEADERS
+}
+
 function usableProviderConfigEnvValue(
   value: string | undefined,
 ): string | undefined {
@@ -574,6 +607,8 @@ export async function getAnthropicClient({
     envOnlyProviderRouteId === 'apismart' && !useMiniMaxEnvOnlyProvider
   const useConcentrateEnvOnlyProvider =
     envOnlyProviderRouteId === 'concentrate' && !useMiniMaxEnvOnlyProvider
+  const useHicapEnvOnlyProvider =
+    envOnlyProviderRouteId === 'hicap' && !useMiniMaxEnvOnlyProvider
   if (useMiniMaxEnvOnlyProvider) applyMiniMaxEnvOnlyDefaults(model)
   if (useXiaomiMimoEnvOnlyProvider) applyXiaomiMimoEnvOnlyDefaults()
   if (useXaiEnvOnlyProvider) applyXaiEnvOnlyDefaults()
@@ -583,6 +618,7 @@ export async function getAnthropicClient({
   if (useAimlapiEnvOnlyProvider) applyAimlapiEnvOnlyDefaults()
   if (useApismartEnvOnlyProvider) applyApismartEnvOnlyDefaults()
   if (useConcentrateEnvOnlyProvider) applyConcentrateEnvOnlyDefaults()
+  if (useHicapEnvOnlyProvider) applyHicapEnvOnlyDefaults()
 
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
